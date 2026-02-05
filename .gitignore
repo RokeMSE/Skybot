@@ -2,3 +2,9 @@
 /src/__pycache__
 /src/extractors/__pycache__
 /src/storage/__pycache__
+test.py
+/__pycache__
+/Lib
+/Scripts
+/share
+/uploads
