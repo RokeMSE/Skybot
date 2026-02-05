@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skybot | Intelligent Assistant</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="logo">S</div>
+                <h1>Skybot</h1>
+            </div>
+            
+            <div class="upload-section">
+                <h2>Knowledge Base</h2>
+                <div class="drop-zone" id="drop-zone">
+                    <div class="icon">📂</div>
+                    <p>Drag PDF here</p>
+                    <span>or click to browse</span>
+                    <input type="file" id="file-input" accept=".pdf" hidden>
+                </div>
+                <div class="upload-status" id="upload-status"></div>
+            </div>
+
+            <div class="info-card">
+                <h3>System Status</h3>
+                <div class="status-item">
+                    <span class="dot online"></span>
+                    <span>RAG Engine Ready</span>
+                </div>
+                <div class="status-item">
+                    <span class="dot online"></span>
+                    <span>Model: Qwen3-VL</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="chat-interface">
+            <div class="chat-header">
+                <h2>Semiconductor Assistant</h2>
+                <div class="actions">
+                    <button class="icon-btn" onclick="location.reload()" title="New Chat">↺</button>
+                </div>
+            </div>
+
+            <div class="chat-history" id="chat-history">
+                <!-- Welcome Message -->
+                <div class="message system">
+                    <div class="avatar">S</div>
+                    <div class="content">
+                        Hello! I'm Skybot. I can analyze your semiconductor technical documents, schematics, and diagrams. Upload a file to get started.
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-area">
+                <div class="input-container">
+                    <textarea id="user-input" placeholder="Ask about your documents..." rows="1"></textarea>
+                    <button id="send-btn" disabled>
+                        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
