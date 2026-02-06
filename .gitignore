@@ -1,3 +1,6 @@
+.env
+.env.local
+/src/llm/__pycache__
 /chroma_db
 /src/__pycache__
 /src/extractors/__pycache__
@@ -9,3 +12,4 @@ test.py
 /share
 /uploads
 pyvenv.cfg
+/static/images

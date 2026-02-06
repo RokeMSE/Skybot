@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from PIL import Image
 import os
 import io
@@ -29,7 +29,7 @@ class ChatService(ABC):
     Abstract base class for Chat/Text Generation services.
     """
     @abstractmethod
-    def generate_response(self, prompt: str, system_instruction: Optional[str] = None) -> str:
+    def generate_response(self, prompt: Union[str, List[Any]], system_instruction: Optional[str] = None) -> str:
         pass
 
 # --- GEMINI IMPLEMENTATION ---
@@ -53,15 +53,19 @@ class GeminiService(VLMService, ChatService):
         except Exception as e:
             return f"Error analyzing image with Gemini: {str(e)}"
 
-    def generate_response(self, prompt: str, system_instruction: Optional[str] = None) -> str:
+    def generate_response(self, prompt: Union[str, List[Any]], system_instruction: Optional[str] = None) -> str:
         try:
             config = types.GenerateContentConfig(
                 temperature=0.5,
                 system_instruction=system_instruction
             )
+            
+            # Gemini handles list of [text, image] natively
+            contents = prompt
+            
             response = self.client.models.generate_content(
                 model=self.model_name,
-                contents=prompt,
+                contents=contents,
                 config=config
             )
             return response.text
@@ -96,12 +100,33 @@ class OllamaService(VLMService, ChatService):
         except Exception as e:
             return f"Error analyzing image with Ollama: {str(e)}"
 
-    def generate_response(self, prompt: str, system_instruction: Optional[str] = None) -> str:
+    def generate_response(self, prompt: Union[str, List[Any]], system_instruction: Optional[str] = None) -> str:
         try:
             messages = []
             if system_instruction:
                 messages.append({'role': 'system', 'content': system_instruction})
-            messages.append({'role': 'user', 'content': prompt})
+            
+            # Handle mixed content for Ollama
+            user_content = ""
+            images = []
+            
+            if isinstance(prompt, list):
+                for item in prompt:
+                    if isinstance(item, str):
+                        user_content += item
+                    elif isinstance(item, Image.Image):
+                        # Convert PIL Image to bytes for Ollama
+                        img_byte_arr = io.BytesIO()
+                        item.save(img_byte_arr, format='PNG')
+                        images.append(img_byte_arr.getvalue())
+            else:
+                user_content = prompt
+
+            user_message = {'role': 'user', 'content': user_content}
+            if images:
+                user_message['images'] = images
+                
+            messages.append(user_message)
 
             response = ollama.chat(
                 model=self.model_name,

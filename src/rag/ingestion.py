@@ -10,16 +10,25 @@ from ..extractors.docx import DOCXExtractor
 from ..extractors.pptx import PPTXExtractor
 from ..storage.vectordb import get_vector_db
 from ..llm.service import get_llm_service
-from ..config import VLM_MODEL
+from ..config import VLM_MODEL, LLM_PROVIDER, GEMINI_API_KEY
 
 class IngestionPipeline:
     def __init__(self):
         self.collection = get_vector_db()
         self.text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-        # Initialize VLM Service (defaulting to Ollama/Qwen as per config, but adjustable)
-        # We can detect provider from config or default to ollama
-        provider = "ollama" if "qwen" in VLM_MODEL.lower() else "gemini"
-        self.vlm_service = get_llm_service(provider=provider, model_name=VLM_MODEL)
+        
+        # Initialize VLM Service based on configured provider
+        if LLM_PROVIDER == "gemini":
+            self.vlm_service = get_llm_service(
+                provider="gemini", 
+                api_key=GEMINI_API_KEY, 
+                model_name=VLM_MODEL
+            )
+        else:  # ollama
+            self.vlm_service = get_llm_service(
+                provider="ollama", 
+                model_name=VLM_MODEL
+            )
         
         self.extractors = {
             ".pdf": PDFExtractor(),

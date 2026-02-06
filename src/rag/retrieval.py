@@ -1,14 +1,24 @@
 from typing import List, Dict, Any, Optional
 from ..storage.vectordb import get_vector_db
 from ..llm.service import get_llm_service
-from ..config import CHAT_MODEL
+from ..config import CHAT_MODEL, LLM_PROVIDER, GEMINI_API_KEY
 
 class RAGEngine:
     def __init__(self):
         self.collection = get_vector_db()
-        # Determine provider based on config model name
-        provider = "ollama" if "qwen" in CHAT_MODEL.lower() or "llama" in CHAT_MODEL.lower() else "gemini"
-        self.chat_service = get_llm_service(provider=provider, model_name=CHAT_MODEL)
+        
+        # Initialize chat service based on configured provider
+        if LLM_PROVIDER == "gemini":
+            self.chat_service = get_llm_service(
+                provider="gemini",
+                api_key=GEMINI_API_KEY,
+                model_name=CHAT_MODEL
+            )
+        else:  # ollama
+            self.chat_service = get_llm_service(
+                provider="ollama",
+                model_name=CHAT_MODEL
+            )
 
     def query(self, user_query: str, n_results: int = 5) -> Dict[str, Any]:
         """
@@ -41,9 +51,6 @@ class RAGEngine:
                     # And images are in static/images
                     img_path = meta['image_path']
                     img_filename = os.path.basename(img_path)
-                    # We need to make sure this path is actually served. 
-                    # config.py says IMAGE_STORE_DIR = static/images
-                    # So URL should be /static/images/{filename}
                     img_url = f"/static/images/{img_filename}"
                     
                     if img_url not in seen_images:
@@ -56,15 +63,44 @@ class RAGEngine:
         # 3. Generate Answer
         system_instruction = (
             "You are an expert Semiconductor Manufacturing Assistant. "
-            "Answer the user's question STRICTLY based on the provided context below. "
-            "If the context contains a description of an image/diagram, explain it clearly. "
+            "You are provided with text context (which may contain pre-generated image descriptions) and actual images. "
+            "CRITICAL: Prioritize your own visual analysis of the provided images over the pre-generated text descriptions if they conflict. "
+            "Answer the user's question STRICTLY based on the provided context (text and images). "
             "Cite the page numbers provided in the context."
         )
         
-        final_prompt = f"\nCONTEXT DATA:\n{context_str}\n\nUSER QUESTION: {user_query}"
+        # Construct multi-modal prompt
+        final_prompt_parts = []
+        final_prompt_parts.append(f"USER QUESTION: {user_query}\n\nCONTEXT DATA:\n")
+        
+        # Add text context components
+        final_prompt_parts.append(context_str)
+        
+        # Add images directly to the prompt context if available
+        # We load the top 3 images to allow the model to "see" them
+        from PIL import Image
+        import os
+        
+        loaded_images_count = 0
+        for img_url in image_urls[:3]:
+            # Convert URL back to path or use original path from metadata
+            # We need to find the original path. Let's look up in retrieved_sources
+             for meta in retrieved_sources:
+                 if meta.get('type') == 'image_cad' and meta.get('image_path'):
+                     if os.path.basename(meta['image_path']) == os.path.basename(img_url):
+                         try:
+                             if os.path.exists(meta['image_path']):
+                                 pil_img = Image.open(meta['image_path'])
+                                 # Use a clearer system tag that the model understands is for internal reference
+                                 final_prompt_parts.append(f"\n<system_image_attachment name='{os.path.basename(img_url)}'/>\n")
+                                 final_prompt_parts.append(pil_img)
+                                 loaded_images_count += 1
+                         except Exception as e:
+                             print(f"Failed to load image for prompt: {e}")
+                         break
         
         answer = self.chat_service.generate_response(
-            prompt=final_prompt,
+            prompt=final_prompt_parts,
             system_instruction=system_instruction
         )
         
