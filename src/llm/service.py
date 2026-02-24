@@ -34,10 +34,16 @@ class ChatService(ABC):
 
 # --- GEMINI IMPLEMENTATION ---
 class GeminiService(VLMService, ChatService):
-    def __init__(self, api_key: str, model_name: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: str, model_name: str = "gemini-2.5-flash", base_url: Optional[str] = None):
         if not genai:
             raise ImportError("Google GenAI SDK not installed.")
-        self.client = genai.Client(api_key=api_key)
+        
+        # Initialize client with custom endpoint if provided
+        http_options = None
+        if base_url:
+            http_options = {'baseUrl': base_url}
+            
+        self.client = genai.Client(api_key=api_key, http_options=http_options)
         self.model_name = model_name
 
     def analyze_image(self, image: Image.Image, prompt: str) -> str:
@@ -74,7 +80,7 @@ class GeminiService(VLMService, ChatService):
 
 # --- OLLAMA IMPLEMENTATION ---
 class OllamaService(VLMService, ChatService):
-    def __init__(self, model_name: str = "qwen3-vl"):
+    def __init__(self, model_name: str = "qwen3-vl:4b"):
         if not ollama:
             raise ImportError("Ollama library not installed.")
         self.model_name = model_name
@@ -139,8 +145,12 @@ class OllamaService(VLMService, ChatService):
 # --- FACTORY ---
 def get_llm_service(provider: str = "ollama", **kwargs):
     if provider == "gemini":
-        return GeminiService(api_key=kwargs.get("api_key"), model_name=kwargs.get("model_name", "gemini-2.5-flash"))
+        return GeminiService(
+            api_key=kwargs.get("api_key"), 
+            model_name=kwargs.get("model_name", "gemini-2.5-flash"),
+            base_url=kwargs.get("base_url")
+        )
     elif provider == "ollama":
-        return OllamaService(model_name=kwargs.get("model_name", "qwen3-vl"))
+        return OllamaService(model_name=kwargs.get("model_name", "qwen3-vl:4b"))
     else:
         raise ValueError(f"Unknown provider: {provider}")

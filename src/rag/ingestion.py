@@ -10,7 +10,7 @@ from ..extractors.docx import DOCXExtractor
 from ..extractors.pptx import PPTXExtractor
 from ..storage.vectordb import get_vector_db
 from ..llm.service import get_llm_service
-from ..config import VLM_MODEL, LLM_PROVIDER, GEMINI_API_KEY
+from ..config import VLM_MODEL, LLM_PROVIDER, GEMINI_API_KEY, GEMINI_ENDPOINT
 
 class IngestionPipeline:
     def __init__(self):
@@ -22,7 +22,8 @@ class IngestionPipeline:
             self.vlm_service = get_llm_service(
                 provider="gemini", 
                 api_key=GEMINI_API_KEY, 
-                model_name=VLM_MODEL
+                model_name=VLM_MODEL,
+                base_url=GEMINI_ENDPOINT
             )
         else:  # ollama
             self.vlm_service = get_llm_service(

@@ -1,3 +1,4 @@
+import os
 from typing import List, Dict, Any, Tuple
 from ..config import CHAT_MODEL, LLM_PROVIDER, GEMINI_API_KEY
 from ..llm.service import get_llm_service
@@ -42,10 +43,9 @@ class Generator:
             
             # Collect images
             if meta.get('type') == 'image' and meta.get('image_path'):
-                # We need to convert local path to a serveable URL format if needed
-                # For now, we'll return the local path or filename so UI can serve it
+                # Need to convert local path to a serveable URL format if needed
+                # TMP FIX: return the local path or filename so UI can serve it
                 # Assuming UI serves from /images/ endpoint mapping to static/images/
-                import os
                 img_filename = os.path.basename(meta['image_path'])
                 img_url = f"/images/{img_filename}"
                 

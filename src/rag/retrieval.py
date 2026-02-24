@@ -1,7 +1,7 @@
 from typing import List, Dict, Any, Optional
 from ..storage.vectordb import get_vector_db
 from ..llm.service import get_llm_service
-from ..config import CHAT_MODEL, LLM_PROVIDER, GEMINI_API_KEY
+from ..config import CHAT_MODEL, LLM_PROVIDER, GEMINI_API_KEY, GEMINI_ENDPOINT
 
 class RAGEngine:
     def __init__(self):
@@ -12,7 +12,8 @@ class RAGEngine:
             self.chat_service = get_llm_service(
                 provider="gemini",
                 api_key=GEMINI_API_KEY,
-                model_name=CHAT_MODEL
+                model_name=CHAT_MODEL,
+                base_url=GEMINI_ENDPOINT
             )
         else:  # ollama
             self.chat_service = get_llm_service(

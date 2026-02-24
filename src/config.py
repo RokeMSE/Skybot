@@ -11,6 +11,7 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini")
 # --- Gemini Configuration (for cloud-based inference) ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_ENDPOINT = os.getenv("GEMINI_ENDPOINT", None)
 
 # --- Ollama Configuration (for local inference) ---
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3-vl:4b")
