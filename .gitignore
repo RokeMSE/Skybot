@@ -13,3 +13,5 @@ test.py
 /uploads
 pyvenv.cfg
 /static/images
+/src/rag/__pycache__
+/src/llm/__pycache__

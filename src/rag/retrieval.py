@@ -1,7 +1,7 @@
 from typing import List, Dict, Any, Optional
 from ..storage.vectordb import get_vector_db
 from ..llm.service import get_llm_service
-from ..config import CHAT_MODEL, LLM_PROVIDER, GEMINI_API_KEY, GEMINI_ENDPOINT
+from ..config import CHAT_MODEL, LLM_PROVIDER, GEMINI_API_KEY, GEMINI_ENDPOINT, OPENAI_API_KEY, OPENAI_ENDPOINT
 
 class RAGEngine:
     def __init__(self):
@@ -15,21 +15,48 @@ class RAGEngine:
                 model_name=CHAT_MODEL,
                 base_url=GEMINI_ENDPOINT
             )
+        elif LLM_PROVIDER == "openai":
+            self.chat_service = get_llm_service(
+                provider="openai",
+                api_key=OPENAI_API_KEY,
+                model_name=CHAT_MODEL,
+                base_url=OPENAI_ENDPOINT
+            )
         else:  # ollama
             self.chat_service = get_llm_service(
                 provider="ollama",
                 model_name=CHAT_MODEL
             )
 
-    def query(self, user_query: str, n_results: int = 5) -> Dict[str, Any]:
+    def get_channels(self) -> List[str]:
+        """Returns a list of distinct channel values from the collection."""
+        try:
+            all_meta = self.collection.get(include=["metadatas"])
+            channels = set()
+            if all_meta and all_meta.get("metadatas"):
+                for meta in all_meta["metadatas"]:
+                    ch = meta.get("channel")
+                    if ch:
+                        channels.add(ch)
+            return sorted(channels)
+        except Exception as e:
+            print(f"Error fetching channels: {e}")
+            return []
+
+    def query(self, user_query: str, n_results: int = 5, channel: Optional[str] = None) -> Dict[str, Any]:
         """
         Retrieves context and generates an answer.
+        Optionally filters by channel.
         """
-        # 1. Retrieve
-        results = self.collection.query(
-            query_texts=[user_query],
-            n_results=n_results
-        )
+        # 1. Retrieve — with optional channel filter
+        query_kwargs = {
+            "query_texts": [user_query],
+            "n_results": n_results
+        }
+        if channel:
+            query_kwargs["where"] = {"channel": channel}
+        
+        results = self.collection.query(**query_kwargs)
         
         # 2. Construct Context
         context_str = ""
@@ -69,17 +96,14 @@ class RAGEngine:
             print(f"Hybrid Retrieval: Checking for images on {len(schema_pages)} pages...")
             try:
                 for source, page in schema_pages:
-                    # Query for images on this specific page
-                    # Note: ChromaDB 'where' filtering is efficient here
-                    img_results = self.collection.get(
-                        where={
-                            "$and": [
-                                {"type": "image_cad"},
-                                {"source": source},
-                                {"page": page}
-                            ]
-                        }
-                    )
+                    where_filter = {
+                        "$and": [
+                            {"type": "image_cad"},
+                            {"source": source},
+                            {"page": page}
+                        ]
+                    }
+                    img_results = self.collection.get(where=where_filter)
                     
                     if img_results['metadatas']:
                         for meta in img_results['metadatas']:
@@ -91,10 +115,8 @@ class RAGEngine:
                                 
                                 if img_url not in seen_images:
                                     print(f"Hybrid Retrieval: Found related image {img_filename}")
-                                    # Insert at the BEGINNING of list to prioritize contextually relevant images
                                     image_urls.insert(0, img_url)
                                     seen_images.add(img_url)
-                                    # Add to retrieved sources for citation if not already present
                                     if meta not in retrieved_sources:
                                         retrieved_sources.append(meta)
             except Exception as e:
@@ -103,28 +125,43 @@ class RAGEngine:
         if not context_str:
             return {"answer": "I couldn't find any relevant information in the uploaded documents to answer your question.", "citations": [], "images": []}
 
-        # 3. Generate Answer
-        # Map pages to image URLs for the LLM to use in markdown
+        # 3. Build source-to-document-URL mapping for hyperlinks
+        source_doc_links = {}
+        for meta in retrieved_sources:
+            source = meta.get('source')
+            page = meta.get('page')
+            if source and page:
+                doc_url = f"/static/documents/{source}#page={page}"
+                if source not in source_doc_links:
+                    source_doc_links[source] = {}
+                source_doc_links[source][page] = doc_url
+
+        # 4. Build page-to-image-URL mapping for inline embeds
         page_to_image_map = {}
         for meta in retrieved_sources:
-             if meta.get('type') == 'image_cad' and meta.get('image_path') and meta.get('page'):
-                 import os
-                 img_filename = os.path.basename(meta['image_path'])
-                 page_to_image_map[meta['page']] = f"/static/images/{img_filename}"
+            if meta.get('type') == 'image_cad' and meta.get('image_path') and meta.get('page'):
+                import os
+                img_filename = os.path.basename(meta['image_path'])
+                page_to_image_map[f"{meta.get('source')}_p{meta['page']}"] = f"/static/images/{img_filename}"
 
+        # 5. Generate Answer
         system_instruction = (
             "You are an expert Semiconductor Manufacturing Assistant. "
             "You are provided with text context (which may contain pre-generated image descriptions) and actual images. "
             "CRITICAL: Prioritize your own visual analysis of the provided images over the pre-generated text descriptions if they conflict. "
-            "Answer the user's question STRICTLY based on the provided context (text and images). "
+            "Answer the user's question based on the provided context (text and images). "
+            "If the context does not contain relevant information, say so clearly. "
             "Cite the page numbers provided in the context.\n\n"
-            "--- INLINE IMAGE RULES ---\n"
-            "The context text may contain placeholders like '[[IMAGE on Page X]]'.\n"
-            f"Here is the mapping of Page Numbers to available Image URLs:\n{page_to_image_map}\n\n"
-            "If you encounter a placeholder '[[IMAGE on Page X]]' and you have a URL for Page X in the mapping above:\n"
-            "1. YOU MUST replace the placeholder with a Markdown image link: `![Diagram from Page X](<Image URL>)`.\n"
-            "2. Do NOT output the raw `[[IMAGE on Page X]]` text.\n"
-            "3. Place the image on its own line.\n"
+            "--- IMAGE DISPLAY RULES ---\n"
+            "When an extracted image (JPEG/PNG) is available for a page, EMBED it inline using markdown:\n"
+            "  ![Description of diagram](/static/images/image_filename.png)\n\n"
+            f"Available image URLs by source and page:\n{page_to_image_map}\n\n"
+            "If the context references a chart, graph, or diagram that does NOT have an extracted image URL above,\n"
+            "then hyperlink to the source document page instead:\n"
+            "  📄 [FileName — Page X](/static/documents/FileName#page=X)\n\n"
+            f"Available document links:\n{source_doc_links}\n\n"
+            "You MAY freely describe or discuss the content of images and diagrams.\n"
+            "You MUST NOT generate, draw, or recreate charts, graphs, or diagrams using markdown, ASCII art, or code blocks.\n"
             "--------------------------"
         )
         
@@ -136,21 +173,17 @@ class RAGEngine:
         final_prompt_parts.append(context_str)
         
         # Add images directly to the prompt context if available
-        # We load the top 3 images to allow the model to "see" them
         from PIL import Image
         import os
         
         loaded_images_count = 0
         for img_url in image_urls[:3]:
-            # Convert URL back to path or use original path from metadata
-            # We need to find the original path. Let's look up in retrieved_sources
              for meta in retrieved_sources:
                  if meta.get('type') == 'image_cad' and meta.get('image_path'):
                      if os.path.basename(meta['image_path']) == os.path.basename(img_url):
                          try:
                              if os.path.exists(meta['image_path']):
                                  pil_img = Image.open(meta['image_path'])
-                                 # Use a clearer system tag that the model understands is for internal reference
                                  final_prompt_parts.append(f"\n<system_image_attachment name='{os.path.basename(img_url)}'/>\n")
                                  final_prompt_parts.append(pil_img)
                                  loaded_images_count += 1
@@ -165,6 +198,6 @@ class RAGEngine:
         
         return {
             "answer": answer,
-            "citations": retrieved_sources[:3], # Return top 3 unique sources
-            "images": list(image_urls)[:3]      # Return top 3 images
+            "citations": retrieved_sources[:3],
+            "images": list(image_urls)[:3]
         }

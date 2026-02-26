@@ -5,59 +5,164 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatHistory = document.getElementById('chat-history');
     const userInput = document.getElementById('user-input');
     const sendBtn = document.getElementById('send-btn');
+    const ingestChannel = document.getElementById('ingest-channel');
+    const chatChannel = document.getElementById('chat-channel');
+    const newChannelInput = document.getElementById('new-channel-input');
+    const addChannelBtn = document.getElementById('add-channel-btn');
 
-    // --- File Upload Logic ---
-    dropZone.addEventListener('click', () => fileInput.click());
+    // =====================================================
+    // MARKED.JS CONFIG — wrapped in try-catch so if it fails
+    // the rest of the app still works
+    // =====================================================
+    try {
+        if (typeof marked.Renderer === 'function') {
+            const renderer = new marked.Renderer();
+            renderer.link = function (href, title, text) {
+                const t = title ? ` title="${title}"` : '';
+                return `<a href="${href}" target="_blank" rel="noopener noreferrer"${t}>${text}</a>`;
+            };
+            marked.setOptions({ renderer });
+        } else if (typeof marked.use === 'function') {
+            marked.use({
+                renderer: {
+                    link(token) {
+                        const href = token.href || '';
+                        const t = token.title ? ` title="${token.title}"` : '';
+                        const text = token.text || href;
+                        return `<a href="${href}" target="_blank" rel="noopener noreferrer"${t}>${text}</a>`;
+                    }
+                }
+            });
+        }
+        console.log('[Skybot] marked.js renderer OK');
+    } catch (err) {
+        console.warn('[Skybot] marked.js renderer failed:', err);
+    }
 
-    dropZone.addEventListener('dragover', (e) => {
+    // =====================================================
+    // CHANNEL MANAGEMENT
+    // =====================================================
+    function formatChannelName(name) {
+        return name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    function addChannelToDropdowns(name) {
+        const exists = Array.from(ingestChannel.options).some(o => o.value === name);
+        if (exists) return false;
+
+        const o1 = document.createElement('option');
+        o1.value = name;
+        o1.textContent = formatChannelName(name);
+        ingestChannel.appendChild(o1);
+
+        const o2 = document.createElement('option');
+        o2.value = name;
+        o2.textContent = formatChannelName(name);
+        chatChannel.appendChild(o2);
+        return true;
+    }
+
+    async function loadChannels() {
+        try {
+            const res = await fetch('/channels');
+            const data = await res.json();
+            if (data.channels && data.channels.length > 0) {
+                const curIngest = ingestChannel.value;
+                const curChat = chatChannel.value;
+
+                ingestChannel.innerHTML = '<option value="general">General</option>';
+                data.channels.forEach(ch => {
+                    if (ch !== 'general') {
+                        const o = document.createElement('option');
+                        o.value = ch;
+                        o.textContent = formatChannelName(ch);
+                        ingestChannel.appendChild(o);
+                    }
+                });
+
+                chatChannel.innerHTML = '<option value="">All Channels</option>';
+                data.channels.forEach(ch => {
+                    const o = document.createElement('option');
+                    o.value = ch;
+                    o.textContent = formatChannelName(ch);
+                    chatChannel.appendChild(o);
+                });
+
+                if (curIngest) ingestChannel.value = curIngest;
+                if (curChat) chatChannel.value = curChat;
+            }
+        } catch (e) {
+            console.warn('[Skybot] Could not load channels:', e);
+        }
+    }
+
+    // + button to add new channel
+    addChannelBtn.addEventListener('click', (e) => {
         e.preventDefault();
-        dropZone.classList.add('dragover');
+        e.stopPropagation();
+        const raw = newChannelInput.value.trim();
+        console.log('[Channel] + clicked, input:', JSON.stringify(raw));
+        if (!raw) return;
+        const name = raw.toLowerCase().replace(/\s+/g, '_');
+        const added = addChannelToDropdowns(name);
+        console.log('[Channel] added:', name, 'new?', added);
+        ingestChannel.value = name;
+        newChannelInput.value = '';
     });
 
-    dropZone.addEventListener('dragleave', () => {
-        dropZone.classList.remove('dragover');
+    // Enter key in new-channel input
+    newChannelInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            e.stopPropagation();
+            addChannelBtn.click();
+        }
     });
 
+    // Load existing channels on startup
+    loadChannels();
+
+    // =====================================================
+    // FILE UPLOAD
+    // =====================================================
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
     dropZone.addEventListener('drop', (e) => {
         e.preventDefault();
         dropZone.classList.remove('dragover');
-        if (e.dataTransfer.files.length) {
-            handleUpload(e.dataTransfer.files[0]);
-        }
+        if (e.dataTransfer.files.length) handleUpload(e.dataTransfer.files[0]);
     });
-
     fileInput.addEventListener('change', () => {
-        if (fileInput.files.length) {
-            handleUpload(fileInput.files[0]);
-        }
+        if (fileInput.files.length) handleUpload(fileInput.files[0]);
     });
 
     async function handleUpload(file) {
-        if (file.type !== 'application/pdf') {
-            setStatus('Only PDF files are supported.', 'error');
+        const allowedExts = ['.pdf', '.docx', '.pptx', '.xlsx', '.csv', '.txt', '.md', '.log', '.html', '.htm'];
+        const ext = '.' + file.name.split('.').pop().toLowerCase();
+        if (!allowedExts.includes(ext)) {
+            setStatus(`Unsupported file type. Supported: ${allowedExts.join(', ')}`, 'error');
             return;
         }
+        const channel = ingestChannel.value;
+        setStatus(`Uploading ${file.name} to "${channel}"...`, 'loading');
 
-        setStatus(`Uploading ${file.name}...`, 'loading');
-
-        const formData = new FormData();
-        formData.append('file', file);
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('channel', channel);
 
         try {
-            const response = await fetch('/ingest', {
-                method: 'POST',
-                body: formData
-            });
-            const data = await response.json();
-
-            if (response.ok) {
-                setStatus('Ingestion complete! Ready to chat.', 'success');
-                addMessage(`I've finished reading **${file.name}**. You can now ask questions about it.`, 'system');
+            const res = await fetch('/ingest', { method: 'POST', body: fd });
+            const data = await res.json();
+            if (res.ok) {
+                setStatus('Ingestion complete!', 'success');
+                addMessage(`I've finished reading **${file.name}** (channel: *${channel}*). You can now ask questions about it.`, 'system');
+                loadChannels();
             } else {
                 throw new Error(data.detail || 'Upload failed');
             }
-        } catch (error) {
-            setStatus(`Error: ${error.message}`, 'error');
+        } catch (err) {
+            setStatus(`Error: ${err.message}`, 'error');
         }
     }
 
@@ -66,7 +171,9 @@ document.addEventListener('DOMContentLoaded', () => {
         uploadStatus.className = `upload-status status-${type}`;
     }
 
-    // --- Chat Logic ---
+    // =====================================================
+    // CHAT
+    // =====================================================
     function autoResize() {
         userInput.style.height = 'auto';
         userInput.style.height = userInput.scrollHeight + 'px';
@@ -90,58 +197,66 @@ document.addEventListener('DOMContentLoaded', () => {
         const text = userInput.value.trim();
         if (!text) return;
 
-        // Reset Input
         userInput.value = '';
         userInput.style.height = 'auto';
         sendBtn.disabled = true;
-
-        // User Message
         addMessage(text, 'user');
 
-        // Loading Indicator
         const loadingId = addMessage('Thinking', 'system', true);
 
+        const body = { query: text };
+        const ch = chatChannel.value;
+        if (ch) body.channel = ch;
+
         try {
-            const response = await fetch('/chat', {
+            const res = await fetch('/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query: text })
+                body: JSON.stringify(body)
             });
-            const data = await response.json();
+            const data = await res.json();
+            document.getElementById(loadingId)?.remove();
 
-            // Remove loading
-            document.getElementById(loadingId).remove();
+            if (res.ok) {
+                let answer = data.answer || '';
 
-            if (response.ok) {
-                // Formatting answer
-                let answer = data.answer;
-
-                // Append citations if any
+                // Deduplicated source citations
                 if (data.citations && data.citations.length) {
-                    answer += '\n\n**Sources:**\n' + data.citations.map(c => `- ${c.source} (Page ${c.page})`).join('\n');
+                    const seen = new Set();
+                    const unique = data.citations.filter(c => {
+                        const k = `${c.source}_${c.page}`;
+                        if (seen.has(k)) return false;
+                        seen.add(k);
+                        return true;
+                    });
+                    answer += '\n\n---\n**📚 Sources:**\n' + unique.map(c => {
+                        const src = c.source || 'Unknown';
+                        const pg = c.page || '?';
+                        return `- [${src} — Page ${pg}](/static/documents/${encodeURIComponent(src)}#page=${pg})`;
+                    }).join('\n');
                 }
 
-                // Append images if any
+                // Inline images
                 if (data.images && data.images.length) {
-                    answer += '\n\n**Related Diagrams:**\n';
-                    data.images.forEach(url => {
-                        answer += `\n![Diagram](${url})`;
-                    });
+                    answer += '\n\n**📎 Related Diagrams:**\n';
+                    data.images.forEach(url => { answer += `\n![Diagram](${url})\n`; });
                 }
 
                 addMessage(answer, 'system');
             } else {
                 addMessage(`Error: ${data.detail}`, 'system');
             }
-
-        } catch (error) {
-            document.getElementById(loadingId).remove();
-            addMessage(`Connection Error: ${error.message}`, 'system');
+        } catch (err) {
+            document.getElementById(loadingId)?.remove();
+            addMessage(`Connection Error: ${err.message}`, 'system');
         }
     }
 
+    // =====================================================
+    // MESSAGE RENDERING
+    // =====================================================
     function addMessage(text, type, isLoading = false) {
-        const id = 'msg-' + Date.now();
+        const id = 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
         const div = document.createElement('div');
         div.className = `message ${type}`;
         div.id = id;
@@ -156,16 +271,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isLoading) {
             content.innerHTML = `<span class="loading-dots">${text}</span>`;
         } else {
-            // Use marked.js to render markdown
             content.innerHTML = marked.parse(text);
         }
 
         div.appendChild(avatar);
         div.appendChild(content);
-
         chatHistory.appendChild(div);
         chatHistory.scrollTop = chatHistory.scrollHeight;
-
         return id;
     }
 });

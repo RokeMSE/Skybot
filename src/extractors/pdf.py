@@ -19,10 +19,6 @@ class PDFExtractor(BaseExtractor):
             # --- 1. Text Extraction ---
             text = page.get_text()
             if text.strip():
-                # Naive chunking for now - ideally use a text splitter later
-                # For this step, we just capture the whole page text as one item
-                # or split by paragraphs. Let's keep it simple for now and rely on
-                # downstream splitters if needed, or split by reasonable size here.
                 items.append(ContentItem(
                     content=text,
                     type="text",
