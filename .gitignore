@@ -15,3 +15,6 @@ pyvenv.cfg
 /static/images
 /src/rag/__pycache__
 /src/llm/__pycache__
+/SkyBot.Blazor/bin
+/SkyBot.Blazor/obj
+/SkyBot.Blazor/wwwroot

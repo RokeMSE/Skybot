@@ -1,0 +1,131 @@
+@using Microsoft.AspNetCore.Components.Forms
+
+<aside class="sidebar">
+    <div class="brand">
+        <div class="logo">S</div>
+        <h1>Skybot</h1>
+    </div>
+
+    <div class="upload-section">
+        <h2>Knowledge Base</h2>
+
+        <div class="drop-zone @(_isDragOver ? "dragover" : "")"
+             @ondragover="HandleDragOver"
+             @ondragover:preventDefault
+             @ondragleave="HandleDragLeave"
+             @onclick="TriggerFileInput">
+            <div class="icon">📂</div>
+            <p>Drag file here</p>
+            <span>or click to browse</span>
+            <InputFile @ref="_fileInput"
+                       OnChange="HandleFileSelected"
+                       accept=".pdf,.docx,.pptx,.xlsx,.csv,.txt,.md,.log,.html,.htm"
+                       style="display:none" />
+        </div>
+
+        <!-- Channel selector -->
+        <div class="channel-select-group">
+            <label>Assign to channel:</label>
+            <div class="channel-input-row">
+                <select @bind="SelectedChannel">
+                    @foreach (var ch in Channels)
+                    {
+                        <option value="@ch">@FormatChannelName(ch)</option>
+                    }
+                </select>
+                <input type="text"
+                       class="new-channel-input"
+                       placeholder="New channel..."
+                       @bind="NewChannelName"
+                       @onkeydown="HandleNewChannelKeyDown" />
+                <button class="icon-btn small" title="Add channel" @onclick="AddChannel">+</button>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_statusMessage))
+        {
+            <div class="upload-status status-@_statusType">@_statusMessage</div>
+        }
+    </div>
+
+    <div class="info-card">
+        <h3>System Status</h3>
+        <div class="status-item">
+            <span class="dot online"></span>
+            <span>RAG Engine Ready</span>
+        </div>
+        <div class="status-item">
+            <span class="dot online"></span>
+            <span>Service:</span>
+        </div>
+    </div>
+</aside>
+
+@code {
+    [Parameter] public List<string> Channels { get; set; } = new() { "general" };
+    [Parameter] public string SelectedChannel { get; set; } = "general";
+    [Parameter] public EventCallback<string> SelectedChannelChanged { get; set; }
+    [Parameter] public EventCallback<string> OnChannelAdded { get; set; }
+    [Parameter] public EventCallback<(IBrowserFile File, string Channel)> OnFileUploaded { get; set; }
+
+    private InputFile? _fileInput;
+    private string NewChannelName { get; set; } = "";
+    private bool _isDragOver;
+    private string _statusMessage = "";
+    private string _statusType = "";
+
+    private string FormatChannelName(string name)
+        => System.Globalization.CultureInfo.CurrentCulture.TextInfo
+            .ToTitleCase(name.Replace("_", " "));
+
+    private void HandleDragOver() => _isDragOver = true;
+    private void HandleDragLeave() => _isDragOver = false;
+
+    private void TriggerFileInput()
+    {
+        // Blazor's InputFile doesn't support .Click() directly,
+        // the hidden input is triggered by clicking the drop-zone overlay
+    }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        _isDragOver = false;
+        var file = e.File;
+        if (file == null) return;
+
+        var allowedExts = new[] { ".pdf", ".docx", ".pptx", ".xlsx", ".csv", ".txt", ".md", ".log", ".html", ".htm" };
+        var ext = System.IO.Path.GetExtension(file.Name).ToLower();
+        if (!allowedExts.Contains(ext))
+        {
+            SetStatus($"Unsupported file type. Supported: {string.Join(", ", allowedExts)}", "error");
+            return;
+        }
+
+        SetStatus($"Uploading {file.Name} to \"{SelectedChannel}\"...", "loading");
+        await OnFileUploaded.InvokeAsync((file, SelectedChannel));
+    }
+
+    public void SetStatus(string message, string type)
+    {
+        _statusMessage = message;
+        _statusType = type;
+        StateHasChanged();
+    }
+
+    private async Task AddChannel()
+    {
+        var raw = NewChannelName.Trim();
+        if (string.IsNullOrEmpty(raw)) return;
+        var name = raw.ToLower().Replace(" ", "_");
+        NewChannelName = "";
+        await OnChannelAdded.InvokeAsync(name);
+        SelectedChannel = name;
+        await SelectedChannelChanged.InvokeAsync(SelectedChannel);
+    }
+
+    private async Task HandleNewChannelKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await AddChannel();
+    }
+}

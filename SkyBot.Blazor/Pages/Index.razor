@@ -1,0 +1,175 @@
+@page "/"
+@inject SkybotApiService Api
+
+<PageTitle>Skybot | Intelligent Assistant</PageTitle>
+
+<Sidebar Channels="@_channels"
+         SelectedChannel="@_selectedIngestChannel"
+         SelectedChannelChanged="@((ch) => _selectedIngestChannel = ch)"
+         OnChannelAdded="HandleChannelAdded"
+         OnFileUploaded="HandleFileUpload"
+         @ref="_sidebar" />
+
+<main class="chat-interface">
+    <div class="chat-header">
+        <h2>Semiconductor Assistant</h2>
+        <div class="actions">
+            <select @bind="_selectedChatChannel">
+                <option value="">All Channels</option>
+                @foreach (var ch in _channels)
+                {
+                    <option value="@ch">@FormatChannelName(ch)</option>
+                }
+            </select>
+            <button class="icon-btn" @onclick="NewChat" title="New Chat">↺</button>
+        </div>
+    </div>
+
+    <ChatHistory Messages="@_messages" />
+    <ChatInput OnSend="HandleSendMessage" IsSending="@_isSending" />
+</main>
+
+@code {
+    private Sidebar? _sidebar;
+    private List<string> _channels = new() { "general" };
+    private string _selectedIngestChannel = "general";
+    private string _selectedChatChannel = "";
+    private List<ChatMessage> _messages = new();
+    private bool _isSending;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Welcome message
+        _messages.Add(new ChatMessage
+        {
+            Content = "Sup dawg! Upload documents and start asking questions! Yo can also create dedicated channels for yo stuffs...",
+            Type = MessageType.System
+        });
+
+        // Load channels from backend
+        await LoadChannels();
+    }
+
+    private async Task LoadChannels()
+    {
+        try
+        {
+            var channels = await Api.GetChannelsAsync();
+            if (channels.Count > 0)
+            {
+                _channels = channels.Contains("general")
+                    ? channels
+                    : new List<string> { "general" }.Concat(channels).ToList();
+            }
+        }
+        catch { }
+    }
+
+    private async Task HandleSendMessage(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        // Add user message
+        _messages.Add(new ChatMessage { Content = text, Type = MessageType.User });
+
+        // Add loading bubble
+        var loadingMsg = new ChatMessage { Content = "Thinking", Type = MessageType.System, IsLoading = true };
+        _messages.Add(loadingMsg);
+        _isSending = true;
+        StateHasChanged();
+
+        try
+        {
+            var channel = string.IsNullOrEmpty(_selectedChatChannel) ? null : _selectedChatChannel;
+            var response = await Api.ChatAsync(text, channel);
+
+            // Remove loading
+            _messages.Remove(loadingMsg);
+
+            // Build the answer
+            var answer = response.Answer ?? "";
+
+            // Append source citations
+            if (response.Citations?.Count > 0)
+            {
+                var seen = new HashSet<string>();
+                var citations = response.Citations
+                    .Where(c => seen.Add($"{c.Source}_{c.Page}"))
+                    .ToList();
+
+                answer += "\n\n---\n**📚 Sources:**\n";
+                answer += string.Join("\n", citations.Select(c =>
+                    $"- [{c.Source} — Page {c.Page}](/static/documents/{Uri.EscapeDataString(c.Source)}#page={c.Page})"));
+            }
+
+            // Append inline images
+            if (response.Images?.Count > 0)
+            {
+                answer += "\n\n**📎 Related Diagrams:**\n";
+                answer += string.Join("\n", response.Images.Select(url => $"\n![Diagram]({url})\n"));
+            }
+
+            _messages.Add(new ChatMessage { Content = answer, Type = MessageType.System });
+        }
+        catch (Exception ex)
+        {
+            _messages.Remove(loadingMsg);
+            _messages.Add(new ChatMessage
+            {
+                Content = $"Connection Error: {ex.Message}",
+                Type = MessageType.System
+            });
+        }
+        finally
+        {
+            _isSending = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleFileUpload((Microsoft.AspNetCore.Components.Forms.IBrowserFile File, string Channel) args)
+    {
+        try
+        {
+            var result = await Api.IngestAsync(args.File, args.Channel);
+            _sidebar?.SetStatus("Ingestion complete!", "success");
+
+            _messages.Add(new ChatMessage
+            {
+                Content = $"I've finished reading **{args.File.Name}** (channel: *{args.Channel}*). You can now ask questions about it.",
+                Type = MessageType.System
+            });
+
+            await LoadChannels();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            _sidebar?.SetStatus($"Error: {ex.Message}", "error");
+        }
+    }
+
+    private void HandleChannelAdded(string name)
+    {
+        if (!_channels.Contains(name))
+        {
+            _channels.Add(name);
+            StateHasChanged();
+        }
+    }
+
+    private void NewChat()
+    {
+        _messages.Clear();
+        _messages.Add(new ChatMessage
+        {
+            Content = "Welcome to **Skybot** — your semiconductor knowledge assistant. Upload documents and start asking questions!",
+            Type = MessageType.System
+        });
+        StateHasChanged();
+    }
+
+    private string FormatChannelName(string name)
+        => System.Globalization.CultureInfo.CurrentCulture.TextInfo
+            .ToTitleCase(name.Replace("_", " "));
+}

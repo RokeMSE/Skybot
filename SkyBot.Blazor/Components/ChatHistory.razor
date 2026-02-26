@@ -1,0 +1,26 @@
+@inject IJSRuntime JS
+
+<div class="chat-history" id="chat-history" @ref="_chatHistoryRef">
+    @foreach (var msg in Messages)
+    {
+        <MessageBubble Message="msg" />
+    }
+</div>
+
+@code {
+    [Parameter]
+    public List<ChatMessage> Messages { get; set; } = new();
+
+    private ElementReference _chatHistoryRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Auto-scroll to bottom on new messages
+        try
+        {
+            await JS.InvokeVoidAsync("eval",
+                "document.getElementById('chat-history').scrollTop = document.getElementById('chat-history').scrollHeight");
+        }
+        catch { }
+    }
+}

@@ -1,0 +1,36 @@
+@using Markdig
+
+<div class="message @(Message.Type == MessageType.User ? "user" : "system")">
+    <div class="avatar">@(Message.Type == MessageType.User ? "U" : "S")</div>
+    <div class="content">
+        @if (Message.IsLoading)
+        {
+            <span class="loading-dots">Thinking</span>
+        }
+        else
+        {
+            @((MarkupString)RenderMarkdown(Message.Content))
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public ChatMessage Message { get; set; } = default!;
+
+    private static readonly MarkdownPipeline _pipeline = new MarkdownPipelineBuilder()
+        .UseAdvancedExtensions()
+        .Build();
+
+    private string RenderMarkdown(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return "";
+
+        var html = Markdown.ToHtml(text, _pipeline);
+
+        // Make all links open in new tab
+        html = html.Replace("<a ", "<a target=\"_blank\" rel=\"noopener noreferrer\" ");
+
+        return html;
+    }
+}
