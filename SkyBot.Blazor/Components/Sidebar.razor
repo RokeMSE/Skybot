@@ -9,19 +9,19 @@
     <div class="upload-section">
         <h2>Knowledge Base</h2>
 
-        <div class="drop-zone @(_isDragOver ? "dragover" : "")"
-             @ondragover="HandleDragOver"
-             @ondragover:preventDefault
-             @ondragleave="HandleDragLeave"
-             @onclick="TriggerFileInput">
+        <label for="fileUploadInput"
+               class="drop-zone @(_isDragOver ? "dragover" : "")"
+               @ondragover="HandleDragOver"
+               @ondragover:preventDefault
+               @ondragleave="HandleDragLeave">
             <div class="icon">📂</div>
             <p>Drag file here</p>
             <span>or click to browse</span>
-            <InputFile @ref="_fileInput"
+            <InputFile id="fileUploadInput"
                        OnChange="HandleFileSelected"
                        accept=".pdf,.docx,.pptx,.xlsx,.csv,.txt,.md,.log,.html,.htm"
                        style="display:none" />
-        </div>
+        </label>
 
         <!-- Channel selector -->
         <div class="channel-select-group">
@@ -68,7 +68,6 @@
     [Parameter] public EventCallback<string> OnChannelAdded { get; set; }
     [Parameter] public EventCallback<(IBrowserFile File, string Channel)> OnFileUploaded { get; set; }
 
-    private InputFile? _fileInput;
     private string NewChannelName { get; set; } = "";
     private bool _isDragOver;
     private string _statusMessage = "";
@@ -80,12 +79,6 @@
 
     private void HandleDragOver() => _isDragOver = true;
     private void HandleDragLeave() => _isDragOver = false;
-
-    private void TriggerFileInput()
-    {
-        // Blazor's InputFile doesn't support .Click() directly,
-        // the hidden input is triggered by clicking the drop-zone overlay
-    }
 
     private async Task HandleFileSelected(InputFileChangeEventArgs e)
     {

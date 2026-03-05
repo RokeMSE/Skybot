@@ -1,6 +1,6 @@
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Components.Forms;
-using SkyBot.Blazor.Models;
+using SkyBot.Shared.Models;
 
 namespace SkyBot.Blazor.Services;
 
@@ -18,8 +18,18 @@ public class SkybotApiService
         var request = new ChatRequest { Query = query, Channel = channel };
         var response = await _http.PostAsJsonAsync("/chat", request);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<ChatResponse>()
+        var result = await response.Content.ReadFromJsonAsync<ChatResponse>()
                ?? new ChatResponse { Answer = "No response received." };
+
+        // Rewrite relative /static/ URLs to point at the API server
+        var serverBase = _http.BaseAddress?.ToString().TrimEnd('/') ?? "";
+        result.Answer = result.Answer.Replace("](/static/", $"]({serverBase}/static/");
+        result.Answer = result.Answer.Replace("(​/static/", $"({serverBase}/static/");
+        result.Images = result.Images.Select(img =>
+            img.StartsWith("/static/") ? $"{serverBase}{img}" : img
+        ).ToList();
+
+        return result;
     }
 
     public async Task<IngestResponse> IngestAsync(IBrowserFile file, string channel)
