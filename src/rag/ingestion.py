@@ -139,10 +139,13 @@ class IngestionPipeline:
         
         if documents:
             print(f"Upserting {len(documents)} chunks to VectorDB...")
-            self.collection.upsert(
-                documents=documents,
-                metadatas=metadatas,
-                ids=ids
-            )
+            BATCH_SIZE = 5000
+            for i in range(0, len(documents), BATCH_SIZE):
+                batch_end = i + BATCH_SIZE
+                self.collection.upsert(
+                    documents=documents[i:batch_end],
+                    metadatas=metadatas[i:batch_end],
+                    ids=ids[i:batch_end]
+                )
             
         return {"status": "success", "file": filename, "chunks": len(documents), "ingest_id": ingest_id}
