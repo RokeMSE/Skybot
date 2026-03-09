@@ -21,3 +21,4 @@ pyvenv.cfg
 SkyBot.Server/bin/Debug/net9.0/appsettings.json
 SkyBot.Server/appsettings.json
 *.cache
+/static/documents
