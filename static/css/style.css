@@ -350,6 +350,80 @@ select option {
     margin-top: 0.5rem;
 }
 
+.message .content img.zoomable {
+    cursor: zoom-in;
+    transition: opacity 0.15s;
+}
+
+.message .content img.zoomable:hover {
+    opacity: 0.85;
+}
+
+/* Lightbox */
+#lightbox {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+
+#lightbox.open {
+    display: flex;
+}
+
+#lightbox-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.88);
+}
+
+#lightbox-container {
+    position: relative;
+    z-index: 1001;
+    max-width: 95vw;
+    max-height: 92vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+#lightbox-img {
+    max-width: 95vw;
+    max-height: 85vh;
+    border-radius: 6px;
+    object-fit: contain;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+}
+
+#lightbox-caption {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    text-align: center;
+    max-width: 80vw;
+}
+
+#lightbox-close {
+    position: absolute;
+    top: -2.2rem;
+    right: 0;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.4rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    transition: color 0.15s;
+}
+
+#lightbox-close:hover {
+    color: var(--text-main);
+}
+
 /* Clickable document hyperlinks in chat */
 .message .content a {
     color: #60a5fa;
@@ -454,6 +528,26 @@ button#send-btn:hover:not(:disabled) {
 .icon-btn:hover {
     border-color: var(--accent);
     color: var(--accent);
+}
+
+/* Mode toggle pill */
+#mode-toggle {
+    width: auto;
+    padding: 0 0.6rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+}
+
+#mode-toggle.mode-rag {
+    border-color: var(--border);
+    color: var(--text-muted);
+}
+
+#mode-toggle.mode-agentic {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-glow);
 }
 
 .loading-dots:after {

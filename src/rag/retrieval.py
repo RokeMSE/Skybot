@@ -1,12 +1,11 @@
 from typing import List, Dict, Any, Optional
 from ..storage.vectordb import get_vector_db
 from ..llm.service import get_llm_service
-from ..config import CHAT_MODEL, LLM_PROVIDER, GEMINI_API_KEY, GEMINI_ENDPOINT, OPENAI_API_KEY, OPENAI_ENDPOINT
+from ..config import CHAT_MODEL, LLM_PROVIDER, GEMINI_API_KEY, GEMINI_ENDPOINT, OPENAI_API_KEY, OPENAI_ENDPOINT, OPENAI_API_VERSION
 
 class RAGEngine:
     def __init__(self):
         self.collection = get_vector_db()
-        
         # Initialize chat service based on configured provider
         if LLM_PROVIDER == "gemini":
             self.chat_service = get_llm_service(
@@ -20,7 +19,8 @@ class RAGEngine:
                 provider="openai",
                 api_key=OPENAI_API_KEY,
                 model_name=CHAT_MODEL,
-                base_url=OPENAI_ENDPOINT
+                base_url=OPENAI_ENDPOINT,
+                api_version=OPENAI_API_VERSION
             )
         else:  # ollama
             self.chat_service = get_llm_service(
@@ -34,7 +34,7 @@ class RAGEngine:
             all_meta = self.collection.get(include=["metadatas"])
             channels = set()
             if all_meta and all_meta.get("metadatas"):
-                for meta in all_meta["metadatas"]:
+                for meta in all_meta["metadatas"]: # NOTE: doesn't have a None check, but should be fine since we control the ingestion and always add a channel
                     ch = meta.get("channel")
                     if ch:
                         channels.add(ch)

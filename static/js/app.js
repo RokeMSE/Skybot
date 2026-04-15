@@ -9,6 +9,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatChannel = document.getElementById('chat-channel');
     const newChannelInput = document.getElementById('new-channel-input');
     const addChannelBtn = document.getElementById('add-channel-btn');
+    const modeToggle = document.getElementById('mode-toggle');
+
+    // =====================================================
+    // MODE TOGGLE  (RAG ↔ Agentic)
+    // =====================================================
+    let agenticMode = false;
+
+    modeToggle.addEventListener('click', () => {
+        agenticMode = !agenticMode;
+        modeToggle.textContent = agenticMode ? 'Agentic' : 'RAG';
+        modeToggle.classList.toggle('mode-rag', !agenticMode);
+        modeToggle.classList.toggle('mode-agentic', agenticMode);
+        modeToggle.title = agenticMode
+            ? 'Agentic mode — multi-step reasoning (slower). Click to switch to RAG.'
+            : 'RAG mode — single-pass retrieval. Click to switch to Agentic.';
+    });
 
     // =====================================================
     // MARKED.JS CONFIG — wrapped in try-catch so if it fails
@@ -138,7 +154,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     async function handleUpload(file) {
-        const allowedExts = ['.pdf', '.docx', '.pptx', '.xlsx', '.csv', '.txt', '.md', '.log', '.html', '.htm'];
+        const allowedExts = ['.pdf', '.docx', '.pptx', '.xlsx', '.csv', '.txt', '.md', '.log', '.html', '.htm', '.png', '.jpg', '.jpeg'];
         const ext = '.' + file.name.split('.').pop().toLowerCase();
         if (!allowedExts.includes(ext)) {
             setStatus(`Unsupported file type. Supported: ${allowedExts.join(', ')}`, 'error');
@@ -207,9 +223,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const body = { query: text };
         const ch = chatChannel.value;
         if (ch) body.channel = ch;
+        if (agenticMode) body.max_iterations = 3;
+
+        const endpoint = agenticMode ? '/agentic-chat' : '/chat';
 
         try {
-            const res = await fetch('/chat', {
+            const res = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
@@ -272,6 +291,12 @@ document.addEventListener('DOMContentLoaded', () => {
             content.innerHTML = `<span class="loading-dots">${text}</span>`;
         } else {
             content.innerHTML = marked.parse(text);
+            // Make every image in this message zoomable
+            content.querySelectorAll('img').forEach(img => {
+                img.classList.add('zoomable');
+                img.title = 'Click to enlarge';
+                img.addEventListener('click', () => openLightbox(img.src, img.alt));
+            });
         }
 
         div.appendChild(avatar);
@@ -280,4 +305,41 @@ document.addEventListener('DOMContentLoaded', () => {
         chatHistory.scrollTop = chatHistory.scrollHeight;
         return id;
     }
+
+    // =====================================================
+    // LIGHTBOX
+    // =====================================================
+    const lightbox = document.createElement('div');
+    lightbox.id = 'lightbox';
+    lightbox.innerHTML = `
+        <div id="lightbox-backdrop"></div>
+        <div id="lightbox-container">
+            <button id="lightbox-close" title="Close (Esc)">✕</button>
+            <img id="lightbox-img" src="" alt="" />
+            <div id="lightbox-caption"></div>
+        </div>`;
+    document.body.appendChild(lightbox);
+
+    const lbImg = document.getElementById('lightbox-img');
+    const lbCaption = document.getElementById('lightbox-caption');
+
+    function openLightbox(src, alt) {
+        lbImg.src = src;
+        lbCaption.textContent = alt || '';
+        lightbox.classList.add('open');
+        document.addEventListener('keydown', onLbKey);
+    }
+
+    function closeLightbox() {
+        lightbox.classList.remove('open');
+        lbImg.src = '';
+        document.removeEventListener('keydown', onLbKey);
+    }
+
+    function onLbKey(e) {
+        if (e.key === 'Escape') closeLightbox();
+    }
+
+    document.getElementById('lightbox-backdrop').addEventListener('click', closeLightbox);
+    document.getElementById('lightbox-close').addEventListener('click', closeLightbox);
 });

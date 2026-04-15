@@ -6,3 +6,5 @@ from .xlsx import XLSXExtractor
 from .csv_ext import CSVExtractor
 from .text import TextExtractor
 from .html_ext import HTMLExtractor
+from .image import ImageExtractor
+from .xml import XMLExtractor

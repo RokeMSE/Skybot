@@ -22,7 +22,7 @@ class CSVExtractor(BaseExtractor):
             rows = list(reader)
 
         if len(rows) < 2:
-            # Only header or empty — store as-is
+            # Only header or empty 
             if rows:
                 items.append(ContentItem(
                     content=" | ".join(rows[0]),

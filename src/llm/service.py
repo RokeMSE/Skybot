@@ -3,8 +3,6 @@ from typing import List, Optional, Dict, Any, Union
 from PIL import Image
 import os
 import io
-
-# --- IMPORTS FOR IMPLEMENTATIONS ---
 try:
     import ollama
 except ImportError:
@@ -17,9 +15,11 @@ except ImportError:
     genai = None
 
 try:
-    from openai import OpenAI
+    from openai import OpenAI, AzureOpenAI
+    
 except ImportError:
     OpenAI = None
+    AzureOpenAI = None
 
 class VLMService(ABC):
     """
@@ -40,10 +40,6 @@ class ChatService(ABC):
 # --- GEMINI IMPLEMENTATION ---
 class GeminiService(VLMService, ChatService):
     def __init__(self, api_key: str, model_name: str = "gemini-2.5-flash", base_url: Optional[str] = None):
-        if not genai:
-            raise ImportError("Google GenAI SDK not installed.")
-        
-        # Initialize client with custom endpoint if provided
         http_options = None
         if base_url:
             http_options = {'baseUrl': base_url}
@@ -149,15 +145,23 @@ class OllamaService(VLMService, ChatService):
 
 # --- OPENAI IMPLEMENTATION ---
 class OpenAIService(VLMService, ChatService):
-    def __init__(self, api_key: str, model_name: str = "gpt-4o", base_url: Optional[str] = None):
-        if not OpenAI:
-            raise ImportError("OpenAI library not installed. Run: pip install openai")
-        
-        client_kwargs = {"api_key": api_key}
-        if base_url:
-            client_kwargs["base_url"] = base_url
-        
-        self.client = OpenAI(**client_kwargs)
+    def __init__(self, api_key: str, model_name: str = "gpt-4o", base_url: Optional[str] = None, api_version: Optional[str] = None):
+        # Use AzureOpenAI client when api_version is provided (Azure deployment)
+        if api_version and AzureOpenAI:
+            import ssl
+            import httpx
+            ssl_context = ssl.create_default_context()
+            self.client = AzureOpenAI(
+                api_key=api_key,
+                azure_endpoint=base_url,
+                api_version=api_version,
+                http_client=httpx.Client(verify=ssl_context),
+            )
+        else:
+            client_kwargs = {"api_key": api_key}
+            if base_url:
+                client_kwargs["base_url"] = base_url
+            self.client = OpenAI(**client_kwargs)
         self.model_name = model_name
 
     def _image_to_base64_url(self, image: Image.Image) -> str:
@@ -235,7 +239,8 @@ def get_llm_service(provider: str = "ollama", **kwargs):
         return OpenAIService(
             api_key=kwargs.get("api_key"),
             model_name=kwargs.get("model_name", "gpt-4o"),
-            base_url=kwargs.get("base_url")
+            base_url=kwargs.get("base_url"),
+            api_version=kwargs.get("api_version")
         )
     else:
         raise ValueError(f"Unknown provider: {provider}")

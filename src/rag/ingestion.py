@@ -13,9 +13,11 @@ from ..extractors.xlsx import XLSXExtractor
 from ..extractors.csv_ext import CSVExtractor
 from ..extractors.text import TextExtractor
 from ..extractors.html_ext import HTMLExtractor
+from ..extractors.image import ImageExtractor
+from ..extractors.xml import XMLExtractor
 from ..storage.vectordb import get_vector_db
 from ..llm.service import get_llm_service
-from ..config import VLM_MODEL, LLM_PROVIDER, GEMINI_API_KEY, GEMINI_ENDPOINT, OPENAI_API_KEY, OPENAI_ENDPOINT, ENABLE_VLM_INGESTION, DOCUMENT_STORE_DIR
+from ..config import VLM_MODEL, LLM_PROVIDER, GEMINI_API_KEY, GEMINI_ENDPOINT, OPENAI_API_KEY, OPENAI_ENDPOINT, OPENAI_API_VERSION, ENABLE_VLM_INGESTION, DOCUMENT_STORE_DIR
 
 class IngestionPipeline:
     def __init__(self):
@@ -35,7 +37,8 @@ class IngestionPipeline:
                 provider="openai",
                 api_key=OPENAI_API_KEY,
                 model_name=VLM_MODEL,
-                base_url=OPENAI_ENDPOINT
+                base_url=OPENAI_ENDPOINT,
+                api_version=OPENAI_API_VERSION
             )
         else:  # ollama
             self.vlm_service = get_llm_service(
@@ -54,6 +57,10 @@ class IngestionPipeline:
             ".log": TextExtractor(),
             ".html": HTMLExtractor(),
             ".htm": HTMLExtractor(),
+            ".png": ImageExtractor(),
+            ".jpg": ImageExtractor(),
+            ".jpeg": ImageExtractor(),
+            ".xml": XMLExtractor(),
         }
 
     def ingest_file(self, file_path: str, channel: str = "general") -> Dict[str, Any]:
@@ -64,7 +71,7 @@ class IngestionPipeline:
         if ext not in self.extractors:
             raise ValueError(f"Unsupported file type: {ext}")
         
-        # Copy original file to document store for in-browser viewing
+        # Copy original file to document store for in-browser viewing (NOTE: THIS IS FOR POC ONLY, SERVE FROM ORIGINAL LOCATION VIA API IN PRODUCTION)
         filename = os.path.basename(file_path)
         doc_dest = os.path.join(DOCUMENT_STORE_DIR, filename)
         if not os.path.exists(doc_dest):
@@ -113,7 +120,7 @@ class IngestionPipeline:
                                 "2. Extract visible text, labels, pin numbers, and component IDs. "
                                 "3. Describe connections, material layers, or process steps shown. "
                                 "Output concise text for search indexing."
-                            )
+                            ) # If you have better prompt ideas, pls implement, these aren't optimized i think ????
                             description = self.vlm_service.analyze_image(pil_image, prompt)
                             rich_content = f"[[IMAGE on Page {item.page_num}]]\nDescription: {description}"
                         else:

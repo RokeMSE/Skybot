@@ -1,17 +1,28 @@
 import os
 from typing import List, Dict, Any, Tuple
-from ..config import CHAT_MODEL, LLM_PROVIDER, GEMINI_API_KEY
+from ..config import CHAT_MODEL, LLM_PROVIDER, GEMINI_API_KEY, OPENAI_API_KEY, OPENAI_ENDPOINT, OPENAI_API_VERSION
 from ..llm.service import get_llm_service
 
 class Generator:
     def __init__(self):
         """Initialize the generator with the configured LLM service."""
-        # Initialize chat service based on configured provider
         if LLM_PROVIDER == "gemini":
             self.llm_service = get_llm_service(
                 provider="gemini",
                 api_key=GEMINI_API_KEY,
                 model_name=CHAT_MODEL
+            )
+        elif LLM_PROVIDER == "openai":
+            import ssl
+            import httpx
+            ssl_context = ssl.create_default_context()
+            self.llm_service = get_llm_service(
+                provider="openai",
+                api_key=OPENAI_API_KEY,
+                model_name=CHAT_MODEL,
+                base_url=OPENAI_ENDPOINT,
+                api_version=OPENAI_API_VERSION,
+                http_client=httpx.Client(verify=ssl_context)
             )
         else:  # ollama
             self.llm_service = get_llm_service(
