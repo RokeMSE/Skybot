@@ -66,7 +66,6 @@ KEYVAL_PG_LAMAS = os.getenv("KEYVAL_PG_LAMAS")
 LOT_UNIT_DIR = r"\\ssfile1\hdmx_db\lot_info\TC"
 
 # --- Aries Oracle DB ---
-ARIES_DB_ENABLED = os.getenv("ARIES_DB_ENABLED", "false").lower() == "true"
 ARIES_DB_USER = os.getenv("ARIES_DB_USER", "")
 ARIES_DB_PASSWORD = os.getenv("ARIES_DB_PASSWORD", "")
 ARIES_DB_DSN = os.getenv("ARIES_DB_DSN", "vn.aries")

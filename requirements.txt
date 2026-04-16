@@ -18,7 +18,7 @@ opencv-python
 numpy
 pandas
 oracledb
-elasticsearch
+elasticsearch<9 # the main server use ver 8, so 9 doesn't work
 # --- Embedding (local fallback for ollama provider) ---
 sentence-transformers
 # --- Agentic layer ---

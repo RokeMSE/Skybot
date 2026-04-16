@@ -1,13 +1,12 @@
 """
 Production Data Agent node.
 
-Gathers live production data from all available sources and appends an
+Gathers live production data from available sources and appends an
 LLM-analysed summary to the scratchpad.
 
-Data sources (in order):
-  1. Lot/Unit XML   — per-lot test results from the network share
-  2. Lamas (ES)     — equipment alarms and logs from Elasticsearch
-  3. Aries Oracle DB — live unit-level test data (only when ARIES_DB_ENABLED=true)
+Data flow:
+  1. Lot/Unit XML  — fetch from network share, extract tester ID
+  2. Lamas (ES)    — query equipment alarms for the tester extracted from step 1
 """
 import logging
 import re
@@ -18,14 +17,13 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from ..llm import get_chat_model
 from ..state import AgentState
-from ..tools import retrieve_lot_unit_info
-from ...config import ARIES_DB_ENABLED
+from ..tools import retrieve_lot_unit_info, list_recent_lots
 
 log = logging.getLogger(__name__)
 
-# ---- Parsers for extracting query parameters from natural language ----
+# ---- Query parameter parsers ----
 
-_LOT_RE = re.compile(r"\b([A-Z0-9]{2}[A-Z0-9]{5,7})\b", re.IGNORECASE)
+_LOT_RE = re.compile(r"\blot\s+([A-Z0-9]{2}[A-Z0-9]{5,7})\b", re.IGNORECASE)
 _OP_RE = re.compile(r"\bop(?:eration)?\s*(\d{3,5})\b", re.IGNORECASE)
 _TESTER_RE = re.compile(r"\b(HXV\d{2,4})\b", re.IGNORECASE)
 
@@ -44,22 +42,29 @@ def _parse_tester(text: str) -> Optional[str]:
     return m.group(1).upper() if m else None
 
 
-def _parse_days_back(query: str) -> float:
+def _parse_hours_back(query: str) -> float:
+    """Extract a lookback window in hours. Defaults to 12."""
     m = re.search(r"(\d+(?:\.\d+)?)\s*(?:day|days)", query, re.IGNORECASE)
     if m:
-        return float(m.group(1))
+        return float(m.group(1)) * 24
     m = re.search(r"(\d+)\s*(?:hour|hours|hr|hrs|h)\b", query, re.IGNORECASE)
     if m:
-        return float(m.group(1)) / 24.0
-    return 0.5
+        return float(m.group(1))
+    return 12.0
 
 
 # ---- Lamas / Elasticsearch helper ----
 
-def _query_lamas(tester_id: str, hours_back: float = 12.0, site_name: int = 0) -> str:
-    """Query Lamas Elasticsearch for equipment alarms around the given tester.
+def _query_lamas(
+    tester_id: Optional[str] = None,
+    hours_back: float = 12.0,
+    site_name: int = 0,
+    sample_count: int = 20,
+) -> str:
+    """Query Lamas Elasticsearch for equipment alarms.
 
-    Returns a text summary or an error message.
+    When *tester_id* is given, filters to that specific tester.
+    When omitted, returns the most recent alarms across **all** testers.
     """
     try:
         from ...tools.elastic_alarm_tool import ElasticAlarmTool
@@ -67,8 +72,8 @@ def _query_lamas(tester_id: str, hours_back: float = 12.0, site_name: int = 0) -
     except ImportError as e:
         return f"Lamas unavailable: {e}"
 
-    # Extract numeric part from tester ID (e.g. HXV053 → 053)
-    tool_num = re.sub(r"^HXV", "", tester_id, flags=re.IGNORECASE)
+    # Extract numeric part if a tester ID is provided: HXV053 → 053
+    tool_num = re.sub(r"^HXV", "", tester_id, flags=re.IGNORECASE) if tester_id else None
 
     now = datetime.now(timezone(timedelta(hours=7)))  # VN timezone
     gte = (now - timedelta(hours=hours_back)).isoformat()
@@ -80,22 +85,25 @@ def _query_lamas(tester_id: str, hours_back: float = 12.0, site_name: int = 0) -
         timeout_seconds=120,
     ))
 
+    params: dict = {
+        "gte": gte,
+        "lte": lte,
+        "site_name": site_name,
+        "sample_count": sample_count,
+    }
+    if tool_num:
+        params["tool_name"] = tool_num
+
     try:
-        result = tool.execute({
-            "tool_name": tool_num,
-            "gte": gte,
-            "lte": lte,
-            "site_name": site_name,
-            "sample_count": 20,
-        })
+        result = tool.execute(params)
         data = result.get("data", {})
 
-        # Format hits into a concise summary
         hits = data.get("hits", {}).get("hits", []) if isinstance(data, dict) else []
+        scope = f"tester {tester_id}" if tester_id else "all testers"
         if not hits:
-            return f"No alarms found for tester {tester_id} in the last {hours_back:.0f}h."
+            return f"No alarms found for {scope} in the last {hours_back:.0f}h."
 
-        lines = [f"=== Lamas Alarms — {tester_id} (last {hours_back:.0f}h, {len(hits)} hits) ==="]
+        lines = [f"=== Lamas Alarms — {scope} (last {hours_back:.0f}h, {len(hits)} hits) ==="]
         for hit in hits:
             src = hit.get("_source", {})
             ts = src.get("@timestamp", "?")
@@ -118,6 +126,7 @@ def aries_data_agent_node(state: AgentState) -> dict:
     iteration = state.get("iteration", 1)
 
     findings: list[str] = []
+    tester_id = _parse_tester(sub_query) or _parse_tester(state["user_query"])
 
     # --- 1. Lot/Unit XML from network share ---
     lot_id, operation = _parse_lot_op(sub_query)
@@ -134,36 +143,62 @@ def aries_data_agent_node(state: AgentState) -> dict:
             if lu["unit_summary"]:
                 parts.append(f"=== Unit Info ===\n{lu['unit_summary']}")
             findings.append("\n\n".join(parts))
+
+            # Extract tester from lot XML if not already in the query
+            if not tester_id and lu.get("tester_id"):
+                tester_id = lu["tester_id"]
+                log.info("Data Agent — extracted tester %s from lot XML", tester_id)
+
         if lu["error"]:
             findings.append(f"[Lot/Unit XML] {lu['error']}")
     elif lot_id:
-        findings.append(f"[Lot/Unit XML] Lot {lot_id} detected but no operation number found — cannot look up XML.")
+        findings.append(f"[Lot/Unit XML] Lot {lot_id} detected but no operation number — cannot look up XML.")
 
     # --- 2. Lamas / Elasticsearch alarms ---
-    tester_id = _parse_tester(sub_query) or _parse_tester(state["user_query"])
+    hours_back = _parse_hours_back(sub_query)
     if tester_id:
-        hours_back = _parse_days_back(sub_query) * 24
-        log.info("Data Agent — querying Lamas for tester=%s, hours_back=%.0f", tester_id, hours_back)
+        log.info("Data Agent — querying Lamas: tester=%s, hours_back=%.0f", tester_id, hours_back)
         lamas_result = _query_lamas(tester_id, hours_back=max(hours_back, 12.0))
         findings.append(lamas_result)
 
-    # --- 3. Aries Oracle DB (only if enabled) ---
-    if ARIES_DB_ENABLED:
-        days_back = _parse_days_back(sub_query)
-        tester_filter = f"%{tester_id}%" if tester_id else "%HXV%"
-        try:
-            from ...services.aries_db import AriesDBService
-            svc = AriesDBService()
-            df = svc.query_unit_level_data(days_back=days_back, tester_filter=tester_filter)
-            findings.append(svc.summarise(df))
-        except Exception as e:
-            log.error("Aries DB query failed: %s", e)
-            findings.append(f"[Aries DB] Query failed: {e}")
+    # --- 3. Broad query (no specific IDs) — list recent lots + all alarms ---
+    if not lot_id and not tester_id:
+        log.info("Data Agent — no specific IDs detected, running broad scan")
+
+        # Recent lots from network share
+        recent = list_recent_lots(n=10)
+        if recent["lots"]:
+            lot_lines = [f"=== Recent Lots (top {len(recent['lots'])}) ==="]
+            for entry in recent["lots"]:
+                header = f"  {entry['lot_id']} op {entry['operation']} (modified {entry['modified']})"
+                if entry.get("tester_id"):
+                    header += f" tester={entry['tester_id']}"
+                lot_lines.append(header)
+                if entry["summary"]:
+                    # Include just the first line of the summary for compactness
+                    first_line = entry["summary"].split("\n")[0]
+                    lot_lines.append(f"    {first_line}")
+            findings.append("\n".join(lot_lines))
+        elif recent["error"]:
+            findings.append(f"[Recent Lots] {recent['error']}")
+
+        # Recent alarms across all testers
+        log.info("Data Agent — querying Lamas for all testers, hours_back=%.0f", hours_back)
+        lamas_result = _query_lamas(
+            tester_id=None,
+            hours_back=max(hours_back, 12.0),
+            sample_count=30,
+        )
+        findings.append(lamas_result)
 
     # --- Combine and analyse ---
     combined = "\n\n".join(findings) if findings else "No data sources returned results."
+    has_real_data = findings and not all(
+        "failed" in f.lower()[:40] or "unavailable" in f.lower()[:40] or "not found" in f.lower()[:40]
+        for f in findings
+    )
 
-    if findings and not all("failed" in f.lower()[:40] or "unavailable" in f.lower()[:40] for f in findings):
+    if has_real_data:
         analysis_prompt = (
             "You are a Production Data Analysis Agent specialising in semiconductor test data.\n\n"
             f"ORIGINAL QUESTION: {state['user_query']}\n"
@@ -174,9 +209,8 @@ def aries_data_agent_node(state: AgentState) -> dict:
             "Analyse the data and produce a concise summary covering:\n"
             "1. Lot/unit test results — pass/fail per step, bin patterns\n"
             "2. Equipment alarms or anomalies from Lamas (if available)\n"
-            "3. Yield metrics and trends (if Aries data available)\n"
-            "4. Correlations between alarms and test failures\n"
-            "5. Recommendations for follow-up investigation\n"
+            "3. Correlations between alarms and test failures\n"
+            "4. Recommendations for follow-up investigation\n"
             "Be precise — cite specific numbers, lot IDs, and timestamps from the data."
         )
         model = get_chat_model(temperature=0.3)

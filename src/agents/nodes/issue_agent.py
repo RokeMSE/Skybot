@@ -18,10 +18,10 @@ from ..tools import retrieve_from_knowledge_base, retrieve_lot_unit_info
 
 log = logging.getLogger(__name__)
 
-# Pattern: 1-2 letters followed by 6-8 alphanumerics  (e.g. 4V56656R, AB1234567)
-_LOT_RE = re.compile(r"\b([A-Z0-9]{2}[A-Z0-9]{5,7})\b", re.IGNORECASE)
-# Pattern: 4-5 digit operation number (e.g. 5274, 62100)
-_OP_RE = re.compile(r"\b(\d{4,5})\b")
+# Pattern: "lot" keyword followed by lot ID (e.g. lot 4V56656R, lot AB1234567)
+_LOT_RE = re.compile(r"\blot\s+([A-Z0-9]{2}[A-Z0-9]{5,7})\b", re.IGNORECASE)
+# Pattern: "op" or "operation" followed by 3-5 digit number
+_OP_RE = re.compile(r"\bop(?:eration)?\s*(\d{3,5})\b", re.IGNORECASE)
 
 
 def _extract_lot_op(text: str) -> tuple:

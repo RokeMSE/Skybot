@@ -368,6 +368,7 @@ def retrieve_lot_unit_info(
     extractor = XMLExtractor()
     lot_summary = ""
     unit_summary = ""
+    tester_id = None
     errors = []
 
     lot_path = os.path.join(lot_dir, "lotinfo.xml")
@@ -375,6 +376,15 @@ def retrieve_lot_unit_info(
         try:
             lot_dict = extractor.xml_to_dict(lot_path)
             lot_summary = format_lot_info(lot_dict)
+            # Extract tester ID (SysId) from the parsed XML
+            _lot = lot_dict.get("LotInfo", {}).get("LotInfo", {})
+            if not _lot:
+                _lot = lot_dict.get("LotInfo", {})
+            sys_id = _lot.get("SysId", {})
+            if isinstance(sys_id, dict):
+                tester_id = sys_id.get("#text")
+            elif isinstance(sys_id, str) and sys_id:
+                tester_id = sys_id
         except Exception as e:
             errors.append(f"lotinfo.xml parse error: {e}")
     else:
@@ -393,5 +403,91 @@ def retrieve_lot_unit_info(
     return {
         "lot_summary": lot_summary,
         "unit_summary": unit_summary,
+        "tester_id": tester_id,
         "error": "; ".join(errors) if errors else None,
     }
+
+
+def list_recent_lots(
+    n: int = 10,
+    base_dir: Optional[str] = None,
+) -> dict:
+    """List the most recently modified lot folders and parse their summaries.
+
+    Scans ``LOT_UNIT_DIR`` for ``{lotID}_{operation}`` directories, sorts by
+    modification time (newest first), and returns compact summaries for the
+    top *n* entries.
+
+    Returns:
+        {
+            "lots": [
+                {"folder": str, "lot_id": str, "operation": str,
+                 "modified": str, "summary": str, "tester_id": str|None},
+                ...
+            ],
+            "error": str or None,
+        }
+    """
+    from datetime import datetime
+    from ..extractors.xml import XMLExtractor
+    from ..tools.lot_info_tool import format_lot_info
+
+    search_dir = base_dir or LOT_UNIT_DIR
+    if not os.path.isdir(search_dir):
+        return {"lots": [], "error": f"Base directory not found: {search_dir}"}
+
+    # Pattern: {lotID}_{operation}  (e.g. 4V56656R_5274)
+    folder_re = re.compile(r"^([A-Z0-9]{2}[A-Z0-9]{5,7})_(\d{3,5})$", re.IGNORECASE)
+
+    entries = []
+    try:
+        for name in os.listdir(search_dir):
+            m = folder_re.match(name)
+            if not m:
+                continue
+            full_path = os.path.join(search_dir, name)
+            if not os.path.isdir(full_path):
+                continue
+            mtime = os.path.getmtime(full_path)
+            entries.append((name, m.group(1).upper(), m.group(2), mtime, full_path))
+    except OSError as e:
+        return {"lots": [], "error": f"Cannot list directory: {e}"}
+
+    # Sort by modification time, newest first
+    entries.sort(key=lambda x: x[3], reverse=True)
+    entries = entries[:n]
+
+    extractor = XMLExtractor()
+    lots = []
+    for folder_name, lot_id, operation, mtime, full_path in entries:
+        modified_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+        summary = ""
+        tester_id = None
+
+        lot_path = os.path.join(full_path, "lotinfo.xml")
+        if os.path.isfile(lot_path):
+            try:
+                lot_dict = extractor.xml_to_dict(lot_path)
+                summary = format_lot_info(lot_dict)
+                # Extract tester ID
+                _lot = lot_dict.get("LotInfo", {}).get("LotInfo", {})
+                if not _lot:
+                    _lot = lot_dict.get("LotInfo", {})
+                sys_id = _lot.get("SysId", {})
+                if isinstance(sys_id, dict):
+                    tester_id = sys_id.get("#text")
+                elif isinstance(sys_id, str) and sys_id:
+                    tester_id = sys_id
+            except Exception as e:
+                summary = f"(parse error: {e})"
+
+        lots.append({
+            "folder": folder_name,
+            "lot_id": lot_id,
+            "operation": operation,
+            "modified": modified_str,
+            "summary": summary,
+            "tester_id": tester_id,
+        })
+
+    return {"lots": lots, "error": None}
