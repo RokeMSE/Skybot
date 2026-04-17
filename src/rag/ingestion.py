@@ -17,34 +17,20 @@ from ..extractors.image import ImageExtractor
 from ..extractors.xml import XMLExtractor
 from ..storage.vectordb import get_vector_db
 from ..llm.service import get_llm_service
-from ..config import VLM_MODEL, LLM_PROVIDER, GEMINI_API_KEY, GEMINI_ENDPOINT, OPENAI_API_KEY, OPENAI_ENDPOINT, OPENAI_API_VERSION, ENABLE_VLM_INGESTION, DOCUMENT_STORE_DIR
+from ..config import VLM_MODEL, OPENAI_API_KEY, OPENAI_ENDPOINT, OPENAI_API_VERSION, ENABLE_VLM_INGESTION, DOCUMENT_STORE_DIR
 
 class IngestionPipeline:
     def __init__(self):
         self.collection = get_vector_db()
         self.text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         
-        # Initialize VLM Service based on configured provider
-        if LLM_PROVIDER == "gemini":
-            self.vlm_service = get_llm_service(
-                provider="gemini", 
-                api_key=GEMINI_API_KEY, 
-                model_name=VLM_MODEL,
-                base_url=GEMINI_ENDPOINT
-            )
-        elif LLM_PROVIDER == "openai":
-            self.vlm_service = get_llm_service(
-                provider="openai",
-                api_key=OPENAI_API_KEY,
-                model_name=VLM_MODEL,
-                base_url=OPENAI_ENDPOINT,
-                api_version=OPENAI_API_VERSION
-            )
-        else:  # ollama
-            self.vlm_service = get_llm_service(
-                provider="ollama", 
-                model_name=VLM_MODEL
-            )
+        self.vlm_service = get_llm_service(
+            provider="openai",
+            api_key=OPENAI_API_KEY,
+            model_name=VLM_MODEL,
+            base_url=OPENAI_ENDPOINT,
+            api_version=OPENAI_API_VERSION
+        )
         
         self.extractors = {
             ".pdf": PDFExtractor(),

@@ -10,16 +10,7 @@ REMEBER to use dotenv(overides=True).
 """
 
 # --- LLM Provider Selection ---
-# Options: "ollama" (local, VERY SLOW AND RESOURCE HEAVY), or "openai"/"gemini" (if allowed)
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini")
-
-# --- Gemini Configuration ---
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-GEMINI_ENDPOINT = os.getenv("GEMINI_ENDPOINT", None)
-
-# --- Ollama Configuration ---
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3-vl:4b")
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
 
 # --- OpenAI / Azure OpenAI Configuration ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -28,18 +19,14 @@ OPENAI_ENDPOINT = os.getenv("OPENAI_ENDPOINT", None)
 OPENAI_API_VERSION = os.getenv("OPENAI_API_VERSION", None)
 OPENAI_REGION = os.getenv("OPENAI_REGION", None) # Technically not needed since the endpoint should include the region but just in case :))
 
-# --- Legacy aliases for backward compatibility ---
-_MODEL_MAP = {"gemini": GEMINI_MODEL, "ollama": OLLAMA_MODEL, "openai": OPENAI_MODEL}
-VLM_MODEL = _MODEL_MAP.get(LLM_PROVIDER, GEMINI_MODEL)
+VLM_MODEL = OPENAI_MODEL
 CHAT_MODEL = VLM_MODEL
 # --- Embedding Configuration ---
 # Each provider has a sensible default; override via .env if needed.
 # NOTE: changing these after ingestion requires deleting chroma_db/ and re-ingesting.
 OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
-GEMINI_EMBEDDING_MODEL = os.getenv("GEMINI_EMBEDDING_MODEL", "models/text-embedding-004")
 LOCAL_EMBEDDING_MODEL  = os.getenv("LOCAL_EMBEDDING_MODEL",  "all-MiniLM-L6-v2")
-# Legacy alias kept for any code that still references it
-EMBEDDING_MODEL = _MODEL_MAP.get(LLM_PROVIDER, GEMINI_MODEL)
+EMBEDDING_MODEL = OPENAI_EMBEDDING_MODEL
 # --- VLM Ingestion Toggle ---
 ENABLE_VLM_INGESTION = os.getenv("ENABLE_VLM_INGESTION", "true").lower() == "true"
 # --- ChromaDB Configuration ---

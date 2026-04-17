@@ -19,3 +19,6 @@ SkyBot.Server/appsettings.json
 /.claude
 src/lotinfo.xml
 src/intel_proxy.sh
+src/temp.py
+src/test_main_for_tools.py
+-

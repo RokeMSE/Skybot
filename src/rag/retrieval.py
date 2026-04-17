@@ -1,32 +1,18 @@
 from typing import List, Dict, Any, Optional
 from ..storage.vectordb import get_vector_db
 from ..llm.service import get_llm_service
-from ..config import CHAT_MODEL, LLM_PROVIDER, GEMINI_API_KEY, GEMINI_ENDPOINT, OPENAI_API_KEY, OPENAI_ENDPOINT, OPENAI_API_VERSION
+from ..config import CHAT_MODEL, OPENAI_API_KEY, OPENAI_ENDPOINT, OPENAI_API_VERSION
 
 class RAGEngine:
     def __init__(self):
         self.collection = get_vector_db()
-        # Initialize chat service based on configured provider
-        if LLM_PROVIDER == "gemini":
-            self.chat_service = get_llm_service(
-                provider="gemini",
-                api_key=GEMINI_API_KEY,
-                model_name=CHAT_MODEL,
-                base_url=GEMINI_ENDPOINT
-            )
-        elif LLM_PROVIDER == "openai":
-            self.chat_service = get_llm_service(
-                provider="openai",
-                api_key=OPENAI_API_KEY,
-                model_name=CHAT_MODEL,
-                base_url=OPENAI_ENDPOINT,
-                api_version=OPENAI_API_VERSION
-            )
-        else:  # ollama
-            self.chat_service = get_llm_service(
-                provider="ollama",
-                model_name=CHAT_MODEL
-            )
+        self.chat_service = get_llm_service(
+            provider="openai",
+            api_key=OPENAI_API_KEY,
+            model_name=CHAT_MODEL,
+            base_url=OPENAI_ENDPOINT,
+            api_version=OPENAI_API_VERSION
+        )
 
     def get_channels(self) -> List[str]:
         """Returns a list of distinct channel values from the collection."""

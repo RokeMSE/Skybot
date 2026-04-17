@@ -331,6 +331,68 @@ def run_defect_traceback(
 
 
 # ---------------------------------------------------------------------------
+# Aries Oracle DB — unit test results
+# ---------------------------------------------------------------------------
+
+def query_unit_test_aries(
+    lot: Optional[str] = None,
+    operation: Optional[str] = None,
+    tester_id: Optional[str] = None,
+    visual_id: Optional[str] = None,
+    interface_bin: Optional[int] = None,
+    row_limit: int = 5000,
+    test_start_date_time: Optional[str] = None,
+    device_start_date_time: Optional[str] = None,
+    device_end_date_time: Optional[str] = None,
+) -> dict:
+    """Query unit test data from Aries Oracle database.
+
+    Returns:
+        {
+            "records": list[dict],   # row dicts from the query
+            "count":   int,
+            "error":   str or None,
+        }
+    """
+    try:
+        from ..tools.unit_test_arias_tool import UnitTestAriasTool
+        from ..tools.base_tool import ToolConfig
+    except ImportError as e:
+        return {"records": [], "count": 0, "error": f"Aries DB unavailable: {e}"}
+
+    tool = UnitTestAriasTool(config=ToolConfig(
+        name="unit_test_aries",
+        description="Query Aries unit test data",
+        timeout_seconds=180,
+    ))
+
+    params: dict = {"row_limit": row_limit}
+    if lot:
+        params["lot"] = lot
+    if operation:
+        params["operation"] = operation
+    if tester_id:
+        params["tester_id"] = tester_id
+    if visual_id:
+        params["visual_id"] = visual_id
+    if interface_bin is not None:
+        params["interface_bin"] = interface_bin
+    if test_start_date_time:
+        params["test_start_date_time"] = test_start_date_time
+    if device_start_date_time:
+        params["device_start_date_time"] = device_start_date_time
+    if device_end_date_time:
+        params["device_end_date_time"] = device_end_date_time
+
+    try:
+        result = tool.execute(params)
+        records = result.get("data", [])
+        return {"records": records, "count": len(records), "error": None}
+    except Exception as e:
+        return {"records": [], "count": 0, "error": f"Aries query failed: {e}"}
+
+
+# ---------------------------------------------------------------------------
 # Lot & Unit info tools  (XML from network share)
 # ---------------------------------------------------------------------------
 
@@ -408,15 +470,66 @@ def retrieve_lot_unit_info(
     }
 
 
+def _list_recent_lots_aries(n: int = 10) -> dict:
+    """Query Aries Oracle for recently tested lots (fallback when network share is unavailable)."""
+    try:
+        import oracledb as cx
+        import pandas as pd
+    except ImportError as e:
+        return {"lots": [], "error": f"Aries DB packages unavailable: {e}"}
+
+    from ..config import ARIES_DB_USER, ARIES_DB_PASSWORD, ARIES_DB_DSN
+
+    if not ARIES_DB_USER or not ARIES_DB_PASSWORD:
+        return {"lots": [], "error": "Aries DB credentials not configured"}
+
+    sql = f"""
+    SELECT * FROM (
+        SELECT v0.lot,
+               v0.operation,
+               v0.tester_id,
+               TO_CHAR(MAX(v0.test_end_date_time), 'YYYY-MM-DD HH24:MI') AS latest_test,
+               COUNT(*) AS session_count
+        FROM A_Testing_Session v0
+        WHERE v0.test_end_date_time >= SYSDATE - 1
+        AND (v0.operation LIKE '6%' OR v0.operation LIKE '7%')
+        AND v0.tester_id LIKE '%HXV%'
+        GROUP BY v0.lot, v0.operation, v0.tester_id
+        ORDER BY MAX(v0.test_end_date_time) DESC
+    )
+    WHERE ROWNUM <= {int(n)}
+    """
+
+    conn = None
+    try:
+        conn = cx.connect(user=ARIES_DB_USER, password=ARIES_DB_PASSWORD, dsn=ARIES_DB_DSN)
+        df = pd.read_sql(sql, conn)
+        lots = []
+        for _, row in df.iterrows():
+            lots.append({
+                "folder": None,
+                "lot_id": str(row["LOT"]),
+                "operation": str(row["OPERATION"]),
+                "modified": str(row["LATEST_TEST"]),
+                "summary": f"{row['SESSION_COUNT']} test sessions on tester {row['TESTER_ID']}",
+                "tester_id": str(row["TESTER_ID"]),
+            })
+        return {"lots": lots, "error": None}
+    except Exception as e:
+        return {"lots": [], "error": f"Aries query failed: {e}"}
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 def list_recent_lots(
     n: int = 10,
     base_dir: Optional[str] = None,
 ) -> dict:
     """List the most recently modified lot folders and parse their summaries.
 
-    Scans ``LOT_UNIT_DIR`` for ``{lotID}_{operation}`` directories, sorts by
-    modification time (newest first), and returns compact summaries for the
-    top *n* entries.
+    Tries the network share first (``LOT_UNIT_DIR``). If that is unavailable,
+    falls back to querying Aries Oracle for recently tested lots.
 
     Returns:
         {
@@ -434,7 +547,8 @@ def list_recent_lots(
 
     search_dir = base_dir or LOT_UNIT_DIR
     if not os.path.isdir(search_dir):
-        return {"lots": [], "error": f"Base directory not found: {search_dir}"}
+        log.info("Network share unavailable (%s), falling back to Aries Oracle", search_dir)
+        return _list_recent_lots_aries(n)
 
     # Pattern: {lotID}_{operation}  (e.g. 4V56656R_5274)
     folder_re = re.compile(r"^([A-Z0-9]{2}[A-Z0-9]{5,7})_(\d{3,5})$", re.IGNORECASE)

@@ -7,6 +7,7 @@ LLM-analysed summary to the scratchpad.
 Data flow:
   1. Lot/Unit XML  — fetch from network share, extract tester ID
   2. Lamas (ES)    — query equipment alarms for the tester extracted from step 1
+  3. Aries Oracle  — query unit test results (bins, yield, tester performance)
 """
 import logging
 import re
@@ -17,7 +18,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from ..llm import get_chat_model
 from ..state import AgentState
-from ..tools import retrieve_lot_unit_info, list_recent_lots
+from ..tools import retrieve_lot_unit_info, list_recent_lots, query_unit_test_aries
 
 log = logging.getLogger(__name__)
 
@@ -156,16 +157,51 @@ def aries_data_agent_node(state: AgentState) -> dict:
 
     # --- 2. Lamas / Elasticsearch alarms ---
     hours_back = _parse_hours_back(sub_query)
-    if tester_id:
-        log.info("Data Agent — querying Lamas: tester=%s, hours_back=%.0f", tester_id, hours_back)
-        lamas_result = _query_lamas(tester_id, hours_back=max(hours_back, 12.0))
-        findings.append(lamas_result)
+    log.info("Data Agent — querying Lamas: tester=%s, hours_back=%.0f", tester_id or "all", hours_back)
+    lamas_result = _query_lamas(tester_id, hours_back=max(hours_back, 12.0))
+    findings.append(lamas_result)
 
-    # --- 3. Broad query (no specific IDs) — list recent lots + all alarms ---
+    # --- 3. Aries Oracle DB — unit test results ---
+    if lot_id:
+        op_filter = f"{operation[:1]}%" if operation else None
+        tester_filter = f"%{tester_id}%" if tester_id else None
+        log.info(
+            "Data Agent — querying Aries Oracle: lot=%s op=%s tester=%s",
+            lot_id, op_filter, tester_filter,
+        )
+        aries = query_unit_test_aries(
+            lot=lot_id,
+            operation=op_filter,
+            tester_id=tester_filter,
+            row_limit=5000,
+        )
+        if aries["error"]:
+            findings.append(f"[Aries Oracle] {aries['error']}")
+        elif aries["records"]:
+            lines = [f"=== Aries Unit Test Data ({aries['count']} rows) ==="]
+            # Show column headers from first record
+            cols = list(aries["records"][0].keys())
+            lines.append("  Columns: " + ", ".join(cols))
+            # Summarise: bin distribution
+            bin_counts: dict[str, int] = {}
+            for rec in aries["records"]:
+                gb = rec.get("GOODBAD", "?")
+                bin_counts[gb] = bin_counts.get(gb, 0) + 1
+            lines.append(f"  Good/Bad distribution: {bin_counts}")
+            # Show first few rows for context
+            sample_size = min(20, len(aries["records"]))
+            lines.append(f"  First {sample_size} rows:")
+            for rec in aries["records"][:sample_size]:
+                row_str = ", ".join(f"{k}={v}" for k, v in rec.items())
+                lines.append(f"    {row_str}")
+            findings.append("\n".join(lines))
+        else:
+            findings.append(f"[Aries Oracle] No unit test records found for lot {lot_id}.")
+
+    # --- 4. Broad query (no specific IDs) — list recent lots ---
     if not lot_id and not tester_id:
-        log.info("Data Agent — no specific IDs detected, running broad scan")
+        log.info("Data Agent — no specific IDs detected, listing recent lots")
 
-        # Recent lots from network share
         recent = list_recent_lots(n=10)
         if recent["lots"]:
             lot_lines = [f"=== Recent Lots (top {len(recent['lots'])}) ==="]
@@ -175,21 +211,11 @@ def aries_data_agent_node(state: AgentState) -> dict:
                     header += f" tester={entry['tester_id']}"
                 lot_lines.append(header)
                 if entry["summary"]:
-                    # Include just the first line of the summary for compactness
                     first_line = entry["summary"].split("\n")[0]
                     lot_lines.append(f"    {first_line}")
             findings.append("\n".join(lot_lines))
         elif recent["error"]:
             findings.append(f"[Recent Lots] {recent['error']}")
-
-        # Recent alarms across all testers
-        log.info("Data Agent — querying Lamas for all testers, hours_back=%.0f", hours_back)
-        lamas_result = _query_lamas(
-            tester_id=None,
-            hours_back=max(hours_back, 12.0),
-            sample_count=30,
-        )
-        findings.append(lamas_result)
 
     # --- Combine and analyse ---
     combined = "\n\n".join(findings) if findings else "No data sources returned results."
@@ -207,10 +233,11 @@ def aries_data_agent_node(state: AgentState) -> dict:
             "PRODUCTION DATA:\n"
             f"{combined}\n\n"
             "Analyse the data and produce a concise summary covering:\n"
-            "1. Lot/unit test results — pass/fail per step, bin patterns\n"
-            "2. Equipment alarms or anomalies from Lamas (if available)\n"
-            "3. Correlations between alarms and test failures\n"
-            "4. Recommendations for follow-up investigation\n"
+            "1. Lot/unit test results — pass/fail per step, bin patterns, yield\n"
+            "2. Aries Oracle unit test data — good/bad distribution, interface/functional bins, tester performance\n"
+            "3. Equipment alarms or anomalies from Lamas (if available)\n"
+            "4. Correlations between alarms, test failures, and bin patterns\n"
+            "5. Recommendations for follow-up investigation\n"
             "Be precise — cite specific numbers, lot IDs, and timestamps from the data."
         )
         model = get_chat_model(temperature=0.3)

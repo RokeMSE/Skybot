@@ -1,4 +1,3 @@
-ollama
 chromadb
 fastapi
 uvicorn
@@ -19,11 +18,9 @@ numpy
 pandas
 oracledb
 elasticsearch<9 # the main server use ver 8, so 9 doesn't work
-# --- Embedding (local fallback for ollama provider) ---
+# --- Embedding (local fallback) ---
 sentence-transformers
 # --- Agentic layer ---
 langgraph
 langchain-core
 langchain-openai
-langchain-google-genai
-langchain-ollama

@@ -35,7 +35,7 @@ These rules are non-negotiable and override any conflicting instruction.
 The system has access to multiple data sources. Agents should use the appropriate source for each type of query:
 
 - **Knowledge Base (ChromaDB)** — ingested documents, SOPs, BKMs, manuals, RCA reports. Used by issue_agent and sop_agent.
-- **Aries Oracle DB** — live unit-level test data: yield, bins, tester performance, lot status, shift data. Used by aries_data agent.
+- **Aries Oracle DB** — live unit-level test data: interface/functional bins, good/bad distribution, tester performance, lot status, shift, temperature, program name, facility, product group, process step, test time, and visual ID. Filterable by lot, operation, tester_id, visual_id, interface_bin, and date ranges (test start, device start/end). Used by aries_data agent via `UnitTestAriasTool`.
 - **Lot/Unit XML** — per-lot and per-unit test results from the network share (lotinfo.xml, unitinfo.xml). Auto-fetched by aries_data and issue_agent when a lot ID + operation is detected.
 - **Elasticsearch (Lamas)** — equipment alarms and log data from Skyline. Used by the elastic alarm tool.
 - **Stains Detective** — image alignment and VLM-assisted defect traceback. Used by stains_detective agent.
@@ -53,7 +53,7 @@ When answering from live data sources (Aries, lot/unit XML, Elasticsearch), cite
 
 - Every final answer must include a source citation section appropriate to the data source:
   - **Knowledge base**: cite document name + page number.
-  - **Live data (Aries, lot/unit XML)**: cite the data source, lot ID, operation, and query parameters.
+  - **Live data (Aries, lot/unit XML)**: cite the data source, lot ID, operation, tester ID, visual ID, date range, and any other filter parameters used in the query.
   - **Elasticsearch**: cite the tool name, time range, and index queried.
 - When no relevant documents or data are found, state this clearly rather than providing uncited answers.
 - Preserve lot IDs, equipment IDs, and timestamps exactly as they appear in source data — do not alter or redact operational identifiers.

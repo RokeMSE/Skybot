@@ -3,8 +3,6 @@ Embedding functions for ChromaDB.
 
 Provider is selected from LLM_PROVIDER in config:
   openai  → Azure OpenAI / OpenAI  (text-embedding-3-small)
-  gemini  → Google GenAI           (models/text-embedding-004)
-  ollama  → Sentence Transformers  (all-MiniLM-L6-v2, runs fully locally, no Ollama server needed)
 
 Changing the active provider requires deleting chroma_db/ and re-ingesting all documents,
 because the embedding dimensions and semantics differ between models.
@@ -12,9 +10,6 @@ because the embedding dimensions and semantics differ between models.
 from chromadb import Documents, EmbeddingFunction, Embeddings
 
 from .config import (
-    GEMINI_API_KEY,
-    GEMINI_EMBEDDING_MODEL,
-    GEMINI_ENDPOINT,
     LOCAL_EMBEDDING_MODEL,
     LLM_PROVIDER,
     OPENAI_API_KEY,
@@ -61,36 +56,10 @@ class OpenAIEmbeddingFunction(EmbeddingFunction):
             return [[0.0] * 1536] * len(input)
 
 
-class GoogleEmbeddingFunction(EmbeddingFunction):
-    """
-    Embeddings via Google Generative AI (text-embedding-004).
-    """
-
-    def __init__(self):
-        from google import genai
-        http_options = {"baseUrl": GEMINI_ENDPOINT} if GEMINI_ENDPOINT else None
-        self._client = genai.Client(api_key=GEMINI_API_KEY, http_options=http_options)
-        self._model = GEMINI_EMBEDDING_MODEL
-
-    def __call__(self, input: Documents) -> Embeddings:
-        embeddings: Embeddings = []
-        for text in input:
-            try:
-                result = self._client.models.embed_content(
-                    model=self._model, contents=str(text)
-                )
-                embeddings.append(result.embeddings[0].values)
-            except Exception as e:
-                print(f"[GoogleEmbedding] Error: {e}")
-                # text-embedding-004 outputs 768 dimensions
-                embeddings.append([0.0] * 768)
-        return embeddings
-
-
 class SentenceTransformerEmbeddingFunction(EmbeddingFunction):
     """
     Local embeddings via Sentence Transformers.
-    No external API or Ollama server required.
+    No external API required.
     Model is downloaded once and cached in ~/.cache/huggingface.
     """
 
@@ -114,8 +83,5 @@ def get_embedding_function() -> EmbeddingFunction:
     """
     if LLM_PROVIDER == "openai":
         return OpenAIEmbeddingFunction()
-    elif LLM_PROVIDER == "gemini":
-        return GoogleEmbeddingFunction()
     else:
-        # ollama provider or any unknown value → local Sentence Transformers
         return SentenceTransformerEmbeddingFunction()
